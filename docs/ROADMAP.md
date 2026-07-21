@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: Bootstrap abgeschlossen; produktive Fachfunktionen sind bewusst noch nicht implementiert.
+Status: Phasen 1 und 2 abgeschlossen; produktive Fachfunktionen beginnen mit Phase 3.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -33,6 +33,9 @@ benötigt die API besondere User-Agent- oder Versionsheader?
 
 ## 2. Sanctum-Cookie-/CSRF-Spike
 
+**Status:** Abgeschlossen am 22.07.2026; Live-Nachweis und Sicherheitsparameter sind in
+[`SANCTUM-SPIKE.md`](SANCTUM-SPIKE.md) dokumentiert.
+
 **Ziel:** Native Machbarkeit und Sicherheitsparameter der bestehenden Cookie-Session belegen.
 
 **Arbeitspakete**
@@ -55,8 +58,9 @@ Client; Cookie-Header oder CSRF-Origin sind serverseitig zu eng konfiguriert.
 - Cookies liegen nicht im Klartext und erscheinen nicht in Logs.
 - 401/Logout löschen alle Spike-Daten deterministisch.
 
-**Offene Backend-Fragen:** Exakte CSRF-URL; erlaubte Origin/Referer-Policy; Cookie-Domain,
-SameSite und `Secure`; Session-/CSRF-Laufzeit; erwartete native Clientkennung; CORS-Relevanz.
+**Ergebnis/Restpunkte:** CSRF-URL, Origin/Referer, Cookie-Scope, SameSite und zweistündige
+Laufzeit sind bestätigt. Vor Produktion fehlen `Secure`, ein 4xx statt 500 bei falscher
+Origin und die verbindliche Festlegung einer nativen Client-Origin.
 
 ## 3. Login, Session und Benutzerprofil
 
@@ -278,6 +282,5 @@ Staging für automatisierte Tests; Release-Health-Endpunkt und Wartungsmodus.
 
 ## Empfohlener nächster Schritt
 
-Phase 2: ein eng begrenzter Sanctum-Cookie-/CSRF-Spike gegen eine sichere Testinstanz.
-Ohne diesen Nachweis würden Login, Offline-Sync und Logout auf einer unbestätigten
-Sicherheitsannahme aufbauen.
+Phase 3: Login, Session-Wiederherstellung, Profil und vollständige lokale Bereinigung auf
+dem jetzt bestätigten Cookie-/CSRF-Unterbau implementieren.

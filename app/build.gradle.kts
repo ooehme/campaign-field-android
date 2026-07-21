@@ -10,6 +10,12 @@ val apiBaseUrl = providers.gradleProperty("CAMPAIGN_FIELD_API_BASE_URL")
 val escapedApiBaseUrl = apiBaseUrl.map {
     it.replace("\\", "\\\\").replace("\"", "\\\"")
 }
+val sanctumClientOrigin = providers.gradleProperty("CAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN")
+    .orElse("https://example.invalid")
+    .map { it.trim().trimEnd('/') }
+val escapedSanctumClientOrigin = sanctumClientOrigin.map {
+    it.replace("\\", "\\\\").replace("\"", "\\\"")
+}
 
 android {
     namespace = "de.oliveroehme.campaignfield"
@@ -23,6 +29,11 @@ android {
         versionName = "0.1.0"
 
         buildConfigField("String", "API_BASE_URL", "\"${escapedApiBaseUrl.get()}\"")
+        buildConfigField(
+            "String",
+            "SANCTUM_CLIENT_ORIGIN",
+            "\"${escapedSanctumClientOrigin.get()}\"",
+        )
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -81,4 +92,10 @@ dependencies {
     implementation(libs.maplibre.android)
 
     testImplementation(libs.junit4)
+    testImplementation(libs.okhttp.jvm)
+    testImplementation(libs.okhttp.mockwebserver)
+
+    androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }

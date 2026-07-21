@@ -171,7 +171,8 @@ anzeigen und niemals einen Servererfolg vortäuschen.
 
 ## Offene Backend-Verträge mit höchster Priorität
 
-1. Exakte Sanctum-Origin-/Cookie-/CORS-/SameSite-Konfiguration für einen nativen Client.
+1. Sanctum ist durch Phase 2 bestätigt; offen bleiben `Secure`, ein sicherer 4xx bei
+   falscher Origin und eine verbindliche native Client-Origin (siehe `SANCTUM-SPIKE.md`).
 2. Finales Schema aller `can`-Flags und Statusübergänge.
 3. Idempotenz und Konfliktstrategie für sämtliche Queue-Arten, nicht nur Gebäude.
 4. Proof-/Foto-/Issue-Endpunkte, Multipart-Schema, Limits, EXIF- und Löschregeln.

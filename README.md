@@ -1,8 +1,8 @@
 # Campaign Field Android
 
 Native Android-Neuimplementierung der operativen Field-App für `campaign-core`.
-Das Repository enthält aktuell ausschließlich das verifizierbare Projektgerüst,
-Architekturentscheidungen und die Umsetzungsroadmap – noch keine produktiven Fachflows.
+Das Repository enthält ein verifizierbares Projektgerüst und den abgeschlossenen
+Sanctum-Cookie-/CSRF-Spike. Produktive Fachflows beginnen mit Login und Session in Phase 3.
 
 ## Leitplanken
 
@@ -15,9 +15,10 @@ Architekturentscheidungen und die Umsetzungsroadmap – noch keine produktiven F
 
 ## Stand
 
-Enthalten sind App-Theme, App-Shell, Navigation und Platzhalter für Login, Aufträge,
-Karte, Sync und Profil. Die fachliche Implementierung beginnt erst mit den Phasen 2–4
-aus der [Roadmap](docs/ROADMAP.md).
+Enthalten sind App-Theme, App-Shell, Navigation, Platzhalter sowie der sichere
+Sanctum-Netzwerkunterbau. Der technische Nachweis steht in
+[SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt Phase 3 der
+[Roadmap](docs/ROADMAP.md).
 
 Die Analyse der PWA-Referenz ist in [API-MAPPING.md](docs/API-MAPPING.md) dokumentiert.
 Architektur und Sicherheitskonzept stehen in [ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -42,11 +43,14 @@ oder in CI als Gradle-Property gesetzt:
 
 ```properties
 CAMPAIGN_FIELD_API_BASE_URL=https://example.invalid/api
+CAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN=https://example.invalid
 ```
 
 Beispiel: [gradle.properties.example](gradle.properties.example). Produktive URLs,
-Zugangsdaten und Session-Werte gehören nicht in Versionskontrolle. Die Property wird
-als `BuildConfig.API_BASE_URL` kompiliert und enthält ausdrücklich kein Auth-Material.
+Zugangsdaten und Session-Werte gehören nicht in Versionskontrolle. Die Properties werden
+als `BuildConfig`-Werte kompiliert und enthalten ausdrücklich kein Auth-Material. Die
+Sanctum-Client-Origin ist die serverseitig freigegebene Stateful-Origin; Requests selbst
+bleiben strikt auf die Origin der API-Basis-URL begrenzt.
 
 ## Struktur
 
