@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Local Android SDK and machine configuration
+local.properties
+*.jks
+*.keystore
+keystore.properties
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Native build output
+.cxx/
+.externalNativeBuild/
+
+# Sensitive/local configuration
+gradle.properties.local
+secrets.properties
