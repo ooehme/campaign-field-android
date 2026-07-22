@@ -1,8 +1,8 @@
 # Campaign Field Android
 
 Native Android-Neuimplementierung der operativen Field-App für `campaign-core`.
-Das Repository enthält ein verifizierbares Projektgerüst und den abgeschlossenen
-Sanctum-Cookie-/CSRF-Spike. Produktive Fachflows beginnen mit Login und Session in Phase 3.
+Das Repository enthält ein verifizierbares Projektgerüst, den abgeschlossenen
+Sanctum-Cookie-/CSRF-Spike und den produktiven Login-/Session-Lifecycle.
 
 ## Leitplanken
 
@@ -15,10 +15,10 @@ Sanctum-Cookie-/CSRF-Spike. Produktive Fachflows beginnen mit Login und Session 
 
 ## Stand
 
-Enthalten sind App-Theme, App-Shell, Navigation, Platzhalter sowie der sichere
-Sanctum-Netzwerkunterbau. Der technische Nachweis steht in
-[SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt Phase 3 der
-[Roadmap](docs/ROADMAP.md).
+Enthalten sind Login, Session-Wiederherstellung, Profil/Teams, Logout, zentraler
+401-Cleanup und die App-Shell. Der technische Sanctum-Nachweis steht in
+[SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt die read-only
+Assignment-Liste aus Phase 4 der [Roadmap](docs/ROADMAP.md).
 
 Die Analyse der PWA-Referenz ist in [API-MAPPING.md](docs/API-MAPPING.md) dokumentiert.
 Architektur und Sicherheitskonzept stehen in [ARCHITECTURE.md](docs/ARCHITECTURE.md)

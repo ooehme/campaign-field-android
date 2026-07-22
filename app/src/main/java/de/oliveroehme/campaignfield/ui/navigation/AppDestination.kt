@@ -5,7 +5,6 @@ sealed class AppDestination(
     val label: String,
     val marker: String,
 ) {
-    data object Login : AppDestination("login", "Login", "L")
     data object Assignments : AppDestination("assignments", "Aufträge", "A")
     data object Map : AppDestination("map", "Karte", "K")
     data object Sync : AppDestination("sync", "Sync", "S")

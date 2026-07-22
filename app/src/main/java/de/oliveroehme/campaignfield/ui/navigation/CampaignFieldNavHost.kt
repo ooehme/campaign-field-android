@@ -6,7 +6,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import de.oliveroehme.campaignfield.ui.screens.AssignmentsScreen
-import de.oliveroehme.campaignfield.ui.screens.LoginScreen
+import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.ui.screens.MapScreen
 import de.oliveroehme.campaignfield.ui.screens.ProfileScreen
 import de.oliveroehme.campaignfield.ui.screens.SyncScreen
@@ -15,21 +15,14 @@ import de.oliveroehme.campaignfield.ui.screens.SyncScreen
 fun CampaignFieldNavHost(
     navController: NavHostController,
     contentPadding: PaddingValues,
+    profile: UserProfile,
+    isLoggingOut: Boolean,
+    onLogout: () -> Unit,
 ) {
     NavHost(
         navController = navController,
-        startDestination = AppDestination.Login.route,
+        startDestination = AppDestination.Assignments.route,
     ) {
-        composable(AppDestination.Login.route) {
-            LoginScreen(
-                contentPadding = contentPadding,
-                onContinue = {
-                    navController.navigate(AppDestination.Assignments.route) {
-                        popUpTo(AppDestination.Login.route) { inclusive = true }
-                    }
-                },
-            )
-        }
         composable(AppDestination.Assignments.route) {
             AssignmentsScreen(contentPadding)
         }
@@ -40,7 +33,12 @@ fun CampaignFieldNavHost(
             SyncScreen(contentPadding)
         }
         composable(AppDestination.Profile.route) {
-            ProfileScreen(contentPadding)
+            ProfileScreen(
+                contentPadding = contentPadding,
+                profile = profile,
+                isLoggingOut = isLoggingOut,
+                onLogout = onLogout,
+            )
         }
     }
 }

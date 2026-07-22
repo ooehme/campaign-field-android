@@ -58,8 +58,13 @@ Der Auth-Ablauf ist:
 5. Bei 401 Auth-, Cache-, Queue-, Foto- und Standortzustand löschen; bei 403 nur die
    Aktion ablehnen; 422 fachlich anzeigen; 5xx/netzwerkabhängig erneut versuchen.
 
-Der CSRF-Endpunkt liegt üblicherweise außerhalb `/api`. Die endgültige Origin- und
-Cookie-Domain-Konfiguration wird im Spike mit dem Backend verifiziert.
+Der CSRF-Endpunkt liegt außerhalb `/api`. Client-Origin, Cookie-Domain und SameSite-
+Verhalten sind im Phase-2-Spike bestätigt. Phase 3 führt alle 401-Antworten über einen
+zentralen Handler, der lokale Session-, Cache-, Queue-, Foto- und Standortdaten bereinigt.
+
+`SessionRepository` veröffentlicht den Auth-Zustand als `StateFlow`. Beim App-Start wird
+ein lokal gespeichertes Profil nur zur kurzen UI-Hydration verwendet; erst ein erfolgreiches
+`GET /user` schaltet die App-Shell frei. Rollen bleiben reine Anzeige und ersetzen nie `can`.
 
 ## Offline und Sync
 

@@ -3,6 +3,7 @@ package de.oliveroehme.campaignfield.network.auth
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
@@ -30,7 +31,7 @@ class SanctumLiveIntegrationTest {
             cookieJar,
         )
 
-        assertEquals(SessionResult.Authenticated, client.signIn(checkNotNull(email), checkNotNull(password)))
+        assertTrue(client.signIn(checkNotNull(email), checkNotNull(password)) is SessionResult.Authenticated)
 
         cookieJar = PersistentCookieJar(configuration.originUrl, persistence)
         client = SanctumSessionClient(
@@ -38,9 +39,12 @@ class SanctumLiveIntegrationTest {
             SanctumHttpClient.create(configuration, cookieJar),
             cookieJar,
         )
-        assertEquals(SessionResult.Authenticated, client.checkSession())
+        assertTrue(client.checkSession() is SessionResult.Authenticated)
         assertEquals(SessionResult.LoggedOut, client.logout())
         assertEquals(null, persistence.value)
-        assertEquals(SessionResult.Failure(SessionStage.USER, 401), client.checkSession())
+        assertEquals(
+            SessionResult.Failure(SessionErrorNormalizer.from(SessionStage.USER, 401)),
+            client.checkSession(),
+        )
     }
 }

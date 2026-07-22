@@ -18,8 +18,9 @@ produktiven Zugangsdaten oder internen Entwicklungsdaten enthalten.
   `X-XSRF-TOKEN` kopiert. `Authorization` wird aktiv entfernt.
 - Kein Cookie, Passwort, CSRF-Wert oder Response-Body mit sensiblen Daten wird geloggt.
 
-Der Phase-2-Spike muss Domain, `Secure`, SameSite-Verhalten, Cookie-Persistenz nach
-Prozessneustart, CSRF-Rotation und Logout gegen eine sichere Testumgebung nachweisen.
+Der Phase-2-Spike bestätigt Domain, SameSite-Verhalten, Cookie-Persistenz nach
+Prozessneustart, CSRF-Rotation und Logout gegen eine sichere Testumgebung. `Secure`
+bleibt vor einem Produktivbetrieb eine verbindliche Backend-Voraussetzung.
 
 ## Lokale Daten
 
@@ -69,9 +70,11 @@ Cookies, Koordinaten oder Dateiinhalte. Debug-Logging folgt denselben Datengrenz
 - Google-Play-Service- und Firebase-Artefakte werden automatisiert aus dem Runtime-
   Dependency-Graph ausgeschlossen beziehungsweise als CI-Verstoß behandelt.
 
-## Security-Abnahme vor produktivem Login
+## Security-Stand nach Phase 3
 
-- Cookie- und CSRF-Integrationstests gegen Testbackend erfolgreich.
-- Prozessneustart, Sessionablauf, 401, 403, Logout und Cookie-Rotation getestet.
-- Keine sensiblen Werte in Logcat, Crashdump, Gradle-Ausgabe oder Screenshots.
-- Lokale Datenbereinigung auf Dateisystem- und Datenbankebene geprüft.
+- Cookie- und CSRF-Integrationstests gegen Testbackend sind erfolgreich.
+- Prozessneustart, Sessionablauf, 401, Logout und Cookie-Rotation sind getestet;
+  403/422/5xx/Transportfehler werden ohne Response-Rohdaten normalisiert.
+- Produktiver Code enthält kein Logging für Passwort, Cookies oder Response-Payloads.
+- 401 und Logout bereinigen Cookies, Profil, App-Datenbank, Queue-Arbeit, Fotos,
+  temporären Cache und Standortzustand über einen gemeinsamen lokalen Cleaner.

@@ -1,5 +1,6 @@
 package de.oliveroehme.campaignfield.network.auth
 
+import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -13,13 +14,20 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
+interface SessionRemoteDataSource {
+    suspend fun signIn(email: String, password: String): SessionResult
+    suspend fun checkSession(): SessionResult
+    suspend fun logout(): SessionResult
+}
+
 class SanctumSessionClient internal constructor(
     private val configuration: ApiConfiguration,
     private val httpClient: OkHttpClient,
     private val cookieJar: PersistentCookieJar,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) {
-    suspend fun signIn(email: String, password: String): SessionResult = withContext(ioDispatcher) {
+    private val userProfileParser: UserProfileParser = UserProfileParser(),
+) : SessionRemoteDataSource {
+    override suspend fun signIn(email: String, password: String): SessionResult = withContext(ioDispatcher) {
         cookieJar.clear()
 
         execute(
@@ -45,9 +53,9 @@ class SanctumSessionClient internal constructor(
         userResult
     }
 
-    suspend fun checkSession(): SessionResult = withContext(ioDispatcher) { checkSessionInternal() }
+    override suspend fun checkSession(): SessionResult = withContext(ioDispatcher) { checkSessionInternal() }
 
-    suspend fun logout(): SessionResult = withContext(ioDispatcher) {
+    override suspend fun logout(): SessionResult = withContext(ioDispatcher) {
         try {
             val outcome = execute(
                 Request.Builder()
@@ -67,38 +75,60 @@ class SanctumSessionClient internal constructor(
                 .url(configuration.apiEndpoint("user"))
                 .get()
                 .build(),
+            readBody = true,
         )
-        return outcome.failureFor(SessionStage.USER) ?: SessionResult.Authenticated
+        outcome.failureFor(SessionStage.USER)?.let { return it }
+        val http = outcome as CallOutcome.Http
+        val payload = http.body
+            ?.takeIf { it.toByteArray().size <= MAX_USER_RESPONSE_BYTES }
+            ?: return SessionResult.Failure(SessionErrorNormalizer.invalidResponse(SessionStage.USER))
+        return runCatching { userProfileParser.parse(payload) }
+            .fold(
+                onSuccess = SessionResult::Authenticated,
+                onFailure = {
+                    SessionResult.Failure(SessionErrorNormalizer.invalidResponse(SessionStage.USER))
+                },
+            )
     }
 
-    private fun execute(request: Request): CallOutcome = try {
-        httpClient.newCall(request).execute().use { response -> CallOutcome.Http(response.code) }
+    private fun execute(request: Request, readBody: Boolean = false): CallOutcome = try {
+        httpClient.newCall(request).execute().use { response ->
+            CallOutcome.Http(
+                status = response.code,
+                body = if (readBody && response.isSuccessful) response.body.string() else null,
+            )
+        }
     } catch (_: IOException) {
         CallOutcome.TransportFailure
     }
 
     private fun CallOutcome.failureFor(stage: SessionStage): SessionResult.Failure? = when (this) {
-        is CallOutcome.Http -> if (status in 200..299) null else SessionResult.Failure(stage, status)
-        CallOutcome.TransportFailure -> SessionResult.Failure(stage, null)
+        is CallOutcome.Http -> if (status in 200..299) {
+            null
+        } else {
+            SessionResult.Failure(SessionErrorNormalizer.from(stage, status))
+        }
+        CallOutcome.TransportFailure -> SessionResult.Failure(SessionErrorNormalizer.from(stage, null))
     }
 
     @Serializable
     private data class LoginRequest(val email: String, val password: String)
 
     private sealed interface CallOutcome {
-        data class Http(val status: Int) : CallOutcome
+        data class Http(val status: Int, val body: String?) : CallOutcome
         data object TransportFailure : CallOutcome
     }
 
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+        const val MAX_USER_RESPONSE_BYTES = 1_048_576
     }
 }
 
 sealed interface SessionResult {
-    data object Authenticated : SessionResult
+    data class Authenticated(val profile: UserProfile) : SessionResult
     data object LoggedOut : SessionResult
-    data class Failure(val stage: SessionStage, val httpStatus: Int?) : SessionResult
+    data class Failure(val error: SessionFailure) : SessionResult
 }
 
 enum class SessionStage {

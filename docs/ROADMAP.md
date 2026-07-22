@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: Phasen 1 und 2 abgeschlossen; produktive Fachfunktionen beginnen mit Phase 3.
+Status: Phasen 1 bis 3 abgeschlossen; Assignment-Funktionen beginnen mit Phase 4.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -64,6 +64,9 @@ Origin und die verbindliche Festlegung einer nativen Client-Origin.
 
 ## 3. Login, Session und Benutzerprofil
 
+**Status:** Abgeschlossen am 22.07.2026; Login, Session-Wiederherstellung, Profil und
+vollständige lokale Bereinigung sind implementiert und durch Unit-/MockWebServer-Tests abgedeckt.
+
 **Ziel:** Produktiver Session-Lifecycle mit verständlichem Login und vollständigem Logout.
 
 **Arbeitspakete**
@@ -86,8 +89,9 @@ offline fehl; sensible Daten bleiben in Caches oder temporären Dateien.
 - Passwort, Cookies und Response-Payloads erscheinen nicht in Logcat.
 - Logout räumt Cookies, Datenbank, Queue, Fotos und Standortzustand auf.
 
-**Offene Backend-Fragen:** kanonisches `/user`-Schema; Profil-/Team-Einbettung; serverseitige
-Sessioninvalidierung bei Offline-Logout; Einladungsscope für das erste native Release.
+**Ergebnis/Restpunkte:** Direkte und `{data: ...}`-Antworten sowie mehrere Team-/Rollenformen
+werden defensiv gelesen; fehlende `can`-Flags bleiben `false`. Offen sind das kanonische
+`/user`-Schema, serverseitige Sessioninvalidierung bei Offline-Logout und der Einladungsscope.
 
 ## 4. Assignment-Liste und Assignment-Details
 
@@ -282,5 +286,5 @@ Staging für automatisierte Tests; Release-Health-Endpunkt und Wartungsmodus.
 
 ## Empfohlener nächster Schritt
 
-Phase 3: Login, Session-Wiederherstellung, Profil und vollständige lokale Bereinigung auf
-dem jetzt bestätigten Cookie-/CSRF-Unterbau implementieren.
+Phase 4: Assignment-Liste und -Details read-only auf dem bestätigten Session-Lifecycle
+implementieren; Mutationen erst nach verbindlicher Status- und `can`-Matrix ergänzen.

@@ -104,6 +104,11 @@ ist laut Praxistest-Datei teilweise behoben, muss aber serverseitig erneut verif
 Native Abweichung: Cookies dürfen nicht im Klartext gespeichert werden. Der Cookie-Jar
 wird persistent verschlüsselt, sein Schlüssel liegt im Android Keystore.
 
+Phase 3 setzt diesen Ablauf produktiv um. Das Profilmodell liest direkte Antworten und
+`{data: ...}`-Hüllen, normalisiert Rollen und Teammitgliedschaften ausschließlich zur
+Anzeige und behandelt fehlende `can`-Flags strikt als `false`. Offline-Logout entfernt
+lokale Daten und weist getrennt auf eine fehlgeschlagene serverseitige Abmeldung hin.
+
 ## `can`-Berechtigungslogik
 
 Fehlende Flags gelten strikt als `false`; Rollen werden nie zur Autorisierung verwendet.

@@ -1,6 +1,8 @@
 package de.oliveroehme.campaignfield.network.auth
 
 import de.oliveroehme.campaignfield.network.ApiConfiguration
+import de.oliveroehme.campaignfield.domain.auth.UserPermissions
+import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import kotlinx.coroutines.runBlocking
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -48,10 +50,23 @@ class SanctumSessionClientTest {
                 .addHeader("Set-Cookie", "XSRF-TOKEN=rotated%3D; Path=/; SameSite=Lax")
                 .addHeader("Set-Cookie", "laravel_session=session; Path=/; HttpOnly; SameSite=Lax"),
         )
-        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"id\":1}"))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("{\"id\":1,\"name\":\"Field User\",\"email\":\"field@example.test\"}"),
+        )
         val client = client()
 
-        assertEquals(SessionResult.Authenticated, client.signIn("field@example.test", "not-logged"))
+        assertEquals(
+            SessionResult.Authenticated(
+                UserProfile(
+                    id = "1",
+                    name = "Field User",
+                    email = "field@example.test",
+                    permissions = UserPermissions(),
+                ),
+            ),
+            client.signIn("field@example.test", "not-logged"),
+        )
 
         val csrfRequest = server.takeRequest()
         val loginRequest = server.takeRequest()
@@ -94,7 +109,10 @@ class SanctumSessionClientTest {
         seedCookie("laravel_session", "session")
         server.enqueue(MockResponse().setResponseCode(401))
 
-        assertEquals(SessionResult.Failure(SessionStage.USER, 401), client().checkSession())
+        assertEquals(
+            SessionResult.Failure(SessionErrorNormalizer.from(SessionStage.USER, 401)),
+            client().checkSession(),
+        )
         assertEquals(null, persistence.value)
         server.takeRequest()
 

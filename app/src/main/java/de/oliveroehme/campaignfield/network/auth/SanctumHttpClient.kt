@@ -16,6 +16,7 @@ internal object SanctumHttpClient {
         configuration: ApiConfiguration,
         cookieJar: PersistentCookieJar,
         allowCleartextForTests: Boolean = false,
+        onUnauthorized: () -> Unit = cookieJar::clear,
     ): OkHttpClient {
         check(allowCleartextForTests || configuration.apiBaseUrl.isHttps) {
             "Sanctum darf nur über HTTPS verwendet werden."
@@ -24,7 +25,7 @@ internal object SanctumHttpClient {
             .cookieJar(cookieJar)
             .addInterceptor(OriginAndJsonInterceptor(configuration))
             .addInterceptor(CsrfInterceptor(cookieJar))
-            .addInterceptor(ClearCookiesOnUnauthorizedInterceptor(cookieJar))
+            .addInterceptor(UnauthorizedInterceptor(onUnauthorized))
             .followRedirects(false)
             .followSslRedirects(false)
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -79,12 +80,12 @@ internal class CsrfInterceptor(
     }
 }
 
-internal class ClearCookiesOnUnauthorizedInterceptor(
-    private val cookieJar: PersistentCookieJar,
+internal class UnauthorizedInterceptor(
+    private val onUnauthorized: () -> Unit,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response =
         chain.proceed(chain.request()).also { response ->
-            if (response.code == 401) cookieJar.clear()
+            if (response.code == 401) onUnauthorized()
         }
 }
 

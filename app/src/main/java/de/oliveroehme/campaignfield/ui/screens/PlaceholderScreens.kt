@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -13,20 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-
-@Composable
-fun LoginScreen(contentPadding: PaddingValues, onContinue: () -> Unit) {
-    PlaceholderScreen(
-        title = "Login",
-        message = "Sanctum-Cookie-Authentifizierung folgt in Roadmap-Phase 2 und 3.",
-        contentPadding = contentPadding,
-        action = {
-            Button(onClick = onContinue) {
-                Text("App-Shell öffnen")
-            }
-        },
-    )
-}
 
 @Composable
 fun AssignmentsScreen(contentPadding: PaddingValues) = PlaceholderScreen(
@@ -50,18 +35,10 @@ fun SyncScreen(contentPadding: PaddingValues) = PlaceholderScreen(
 )
 
 @Composable
-fun ProfileScreen(contentPadding: PaddingValues) = PlaceholderScreen(
-    title = "Profil",
-    message = "Session, Benutzerprofil und Logout folgen in Roadmap-Phase 3.",
-    contentPadding = contentPadding,
-)
-
-@Composable
 private fun PlaceholderScreen(
     title: String,
     message: String,
     contentPadding: PaddingValues,
-    action: (@Composable () -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -82,6 +59,5 @@ private fun PlaceholderScreen(
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyLarge,
         )
-        action?.invoke()
     }
 }
