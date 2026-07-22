@@ -370,13 +370,20 @@ class DefaultAssignmentRepository(
         )
         if (invalid != null) return AssignmentResult.Failure(invalid)
         if (!networkStateProvider.isOnline()) return queuePosterCreate(assignment, input)
-        return when (val result = remote.createPosterLocation(assignment.summary.id, input)) {
+        val clientEventKey = UUID.randomUUID().toString()
+        return when (
+            val result = remote.createPosterLocation(
+                assignment.summary.id,
+                input,
+                clientEventKey,
+            )
+        ) {
             is AssignmentResult.Success -> {
                 offlineStore?.mergeAssignmentMapFeature(assignment.summary.id, null, result.value)
                 AssignmentResult.Success(AssignmentMapFeatureChange(result.value, queued = false))
             }
             is AssignmentResult.Failure -> if (result.failure.kind.isRetryableMutation()) {
-                queuePosterCreate(assignment, input)
+                queuePosterCreate(assignment, input, clientEventKey)
             } else result
         }
     }
@@ -526,8 +533,14 @@ class DefaultAssignmentRepository(
                 )
             }
         }
+        val clientEventKey = if (existing == null) UUID.randomUUID().toString() else null
         return when (
-            val result = remote.saveCampaignBoothLocation(assignment.summary.id, existing?.id, input)
+            val result = remote.saveCampaignBoothLocation(
+                assignment.summary.id,
+                existing?.id,
+                input,
+                clientEventKey,
+            )
         ) {
             is AssignmentResult.Success -> {
                 offlineStore?.mergeAssignmentMapFeature(assignment.summary.id, existing?.id, result.value)
@@ -541,6 +554,7 @@ class DefaultAssignmentRepository(
                         source,
                         null,
                         SyncEventKind.CAMPAIGN_BOOTH_LOCATION_UPDATE,
+                        clientEventKey,
                     )
                 } else {
                     queueFeatureUpdate(
@@ -622,9 +636,16 @@ class DefaultAssignmentRepository(
     private suspend fun queuePosterCreate(
         assignment: AssignmentDetail,
         input: AssignmentLocationInput,
+        eventId: String? = null,
     ): AssignmentResult<AssignmentMapFeatureChange> {
         val feature = localLocationFeature(AssignmentMapFeatureKind.POSTER, input)
-        return queueMapFeature(assignment, feature, null, SyncEventKind.POSTER_LOCATION_CREATE)
+        return queueMapFeature(
+            assignment,
+            feature,
+            null,
+            SyncEventKind.POSTER_LOCATION_CREATE,
+            eventId,
+        )
     }
 
     private suspend fun queueFeatureUpdate(
@@ -656,9 +677,16 @@ class DefaultAssignmentRepository(
         feature: AssignmentMapFeature,
         previous: AssignmentMapFeature?,
         kind: SyncEventKind,
+        eventId: String? = null,
     ): AssignmentResult<AssignmentMapFeatureChange> {
         val store = offlineStore ?: return AssignmentResult.Failure(AssignmentFailure.network())
-        store.enqueueAssignmentMapFeatureMutation(assignment.summary.id, kind, feature, previous)
+        store.enqueueAssignmentMapFeatureMutation(
+            assignment.summary.id,
+            kind,
+            feature,
+            previous,
+            eventId,
+        )
         store.mergeAssignmentMapFeature(
             assignment.summary.id,
             previous?.id,

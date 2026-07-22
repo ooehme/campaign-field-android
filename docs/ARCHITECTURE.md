@@ -78,8 +78,8 @@ WorkManager verarbeitet nur Requests mit Netzwerk-Constraint. 401 stoppt den Lau
 403/409/422 werden dauerhaft sichtbar `failed`, 5xx und Transportfehler bleiben `pending`
 und verwenden Backoff. Erfolgreiche Events werden erst nach lokalem Merge als `synced` markiert.
 Gebäude-Retries sind mit stabiler Queue-ID (`client_event_key`) idempotent; `updated_at`
-liefert Optimistic Locking mit 409. Für Poster- und Aktionsstand-POSTs fehlt diese
-Servergarantie noch.
+liefert Optimistic Locking mit 409. Poster- und Aktionsstand-Erstellungen verwenden den
+gleichen Event-Key bereits beim ersten Onlineversuch und behalten ihn bei Queue-Retries bei.
 
 ## Karten, Standort und Sensoren
 

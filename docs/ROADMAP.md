@@ -1,7 +1,7 @@
 # Roadmap
 
-Status: Phasen 1 bis 7 sind im lokal und gegen den vorhandenen Backendvertrag
-prüfbaren Umfang abgeschlossen. Für POST-Erstellungen fehlt serverseitig noch Idempotenz.
+Status: Phasen 1 bis 7 sind abgeschlossen. Der Idempotenz- und Konfliktvertrag ist für
+alle derzeit implementierten Queue-Mutationen in Android und `campaign-core` abgebildet.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -220,7 +220,9 @@ die serverseitige Gebietsprüfung bleiben Backend-Restpunkte.
 Zeitstempeln, exklusives Claiming, stale-Recovery und Retention sind auf einem Pixel 9a
 getestet. 401 markiert den aktiven Eintrag deterministisch und stoppt den Lauf. Gebäude-
 Events senden die stabile Queue-ID als `client_event_key` und den bekannten Serverstand
-als `updated_at`; 409 bleibt sichtbar. Autoritative Antworten werden vor `synced` gemerged.
+als `updated_at`; Poster- und Aktionsstand-Erstellungen verwenden denselben Schlüssel
+bereits beim ersten Onlineversuch. 409 bleibt sichtbar. Autoritative Antworten werden
+vor `synced` gemerged.
 
 **Ziel:** Lesen und Arbeiten bei instabilem Netz mit nachvollziehbarer, idempotenter Queue.
 
@@ -245,12 +247,10 @@ WorkManager-Verzögerung, Sessionablauf während Queue-Lauf.
 - erfolgreicher Sync merged Serverzustand vor `synced`; Fehler bleiben verständlich sichtbar.
 - Retry ist idempotent; lokale Pending-Daten werden durch Refetch nicht verdeckt.
 
-**Ergebnis/Restpunkte:** Der in `campaign-core` implementierte Gebäude-Vertrag ist nativ
-abgebildet und per MockWebServer getestet. Assignment-/Standort-PATCHes sind wiederholbare
-Setzoperationen. Für Poster-POSTs und die erstmalige Aktionsstand-Anlage fehlt weiterhin
-ein serverseitig gespeicherter Idempotency-Key; deren automatische Wiederholung bleibt
-damit ein Release-Risiko. Offen sind außerdem Deltaendpunkte, maximale Offline-Dauer und
-fachliche Löschregeln.
+**Ergebnis/Restpunkte:** Die in `campaign-core` implementierten Gebäude- und Standort-
+Verträge sind nativ abgebildet und per MockWebServer getestet. Stabile Event-Keys schützen
+Gebäude-, Poster- und Aktionsstand-Retries; Assignment-/Standort-PATCHes sind wiederholbare
+Setzoperationen. Offen sind Deltaendpunkte, maximale Offline-Dauer und fachliche Löschregeln.
 
 ## 8. Fotos, Notizen und Nachweise
 

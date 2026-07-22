@@ -69,6 +69,7 @@ interface OfflineStore {
         kind: SyncEventKind,
         feature: AssignmentMapFeature,
         previousFeature: AssignmentMapFeature? = null,
+        eventId: String? = null,
     ): SyncQueueItem
 
     suspend fun readPendingQueue(): List<SyncQueueItem>
@@ -260,6 +261,7 @@ class RoomOfflineStore(
         kind: SyncEventKind,
         feature: AssignmentMapFeature,
         previousFeature: AssignmentMapFeature?,
+        eventId: String?,
     ): SyncQueueItem {
         require(
             kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE ||
@@ -269,7 +271,7 @@ class RoomOfflineStore(
         )
         val now = clock()
         val entity = SyncQueueEntity(
-            id = UUID.randomUUID().toString(),
+            id = eventId ?: UUID.randomUUID().toString(),
             assignmentId = assignmentId,
             subjectId = feature.id,
             kind = kind.name,

@@ -175,6 +175,7 @@ class AssignmentHttpClientTest {
         val result = client.createPosterLocation(
             "8",
             AssignmentLocationInput(50.8, 12.9, label = "Mast", note = "Nordseite"),
+            "poster-event-1",
         )
 
         assertEquals("21", (result as AssignmentResult.Success).value.id)
@@ -182,7 +183,32 @@ class AssignmentHttpClientTest {
         assertEquals("POST", request.method)
         assertEquals("/api/assignments/8/poster-locations", request.path)
         assertEquals(
-            """{"lat":50.8,"lng":12.9,"label":"Mast","notes":"Nordseite"}""",
+            """{"lat":50.8,"lng":12.9,"label":"Mast","notes":"Nordseite","client_event_key":"poster-event-1"}""",
+            request.body.readUtf8(),
+        )
+    }
+
+    @Test
+    fun `creates campaign booth with client event key`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"data":{"id":31,"label":"Marktplatz","lat":50.8,"lng":12.9}}""",
+            ),
+        )
+
+        val result = client.saveCampaignBoothLocation(
+            assignmentId = "8",
+            existingId = null,
+            input = AssignmentLocationInput(50.8, 12.9, label = "Marktplatz"),
+            clientEventKey = "booth-event-1",
+        )
+
+        assertEquals("31", (result as AssignmentResult.Success).value.id)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/assignments/8/campaign-booth-location", request.path)
+        assertEquals(
+            """{"lat":50.8,"lng":12.9,"label":"Marktplatz","client_event_key":"booth-event-1"}""",
             request.body.readUtf8(),
         )
     }

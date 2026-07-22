@@ -159,7 +159,7 @@ class AssignmentSyncEngine(
             }
         }
         SyncEventKind.POSTER_LOCATION_CREATE -> syncMapFeature(event) { feature, input ->
-            remote.createPosterLocation(event.assignmentId, input).also { result ->
+            remote.createPosterLocation(event.assignmentId, input, event.id).also { result ->
                 if (result is AssignmentResult.Success) {
                     offlineStore.mergeAssignmentMapFeature(event.assignmentId, feature.id, result.value)
                 }
@@ -174,7 +174,12 @@ class AssignmentSyncEngine(
         }
         SyncEventKind.CAMPAIGN_BOOTH_LOCATION_UPDATE -> syncMapFeature(event) { feature, input ->
             val existingId = feature.id.takeUnless { it.startsWith("local-") }
-            remote.saveCampaignBoothLocation(event.assignmentId, existingId, input).also { result ->
+            remote.saveCampaignBoothLocation(
+                event.assignmentId,
+                existingId,
+                input,
+                clientEventKey = event.id.takeIf { existingId == null },
+            ).also { result ->
                 if (result is AssignmentResult.Success) {
                     offlineStore.mergeAssignmentMapFeature(event.assignmentId, feature.id, result.value)
                 }

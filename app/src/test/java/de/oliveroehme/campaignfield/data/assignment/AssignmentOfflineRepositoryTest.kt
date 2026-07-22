@@ -147,6 +147,61 @@ class AssignmentOfflineRepositoryTest {
     }
 
     @Test
+    fun `online poster failure keeps client event key for queued retry`() = runBlocking {
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(), 1L)
+        }
+        val remote = FakeRemote(
+            posterCreateResult = networkFailure(),
+        )
+        val repository = DefaultAssignmentRepository(
+            remote = remote,
+            offlineStore = store,
+        )
+        val assignment = detail(AssignmentStatus.ACTIVE).copy(
+            summary = summary(AssignmentStatus.ACTIVE).copy(type = AssignmentType.POSTER_FREE),
+            permissions = AssignmentPermissions(managePosterLocations = true),
+        )
+
+        val result = repository.createPosterLocation(
+            assignment,
+            AssignmentLocationInput(50.8, 12.9, label = "Mast"),
+        ) as AssignmentResult.Success
+
+        assertTrue(result.value.queued)
+        assertFalse(remote.createdPosterClientEventKey.isNullOrBlank())
+        assertEquals(remote.createdPosterClientEventKey, store.queue.value.single().id)
+    }
+
+    @Test
+    fun `online booth create failure keeps client event key for queued retry`() = runBlocking {
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(), 1L)
+        }
+        val remote = FakeRemote(
+            boothSaveResult = networkFailure(),
+        )
+        val repository = DefaultAssignmentRepository(
+            remote = remote,
+            offlineStore = store,
+        )
+        val assignment = detail(AssignmentStatus.ACTIVE).copy(
+            summary = summary(AssignmentStatus.ACTIVE).copy(type = AssignmentType.CAMPAIGN_BOOTH),
+            permissions = AssignmentPermissions(manageCampaignBoothLocation = true),
+        )
+
+        val result = repository.saveCampaignBoothLocation(
+            assignment,
+            existing = null,
+            input = AssignmentLocationInput(50.8, 12.9, label = "Marktplatz"),
+        ) as AssignmentResult.Success
+
+        assertTrue(result.value.queued)
+        assertFalse(remote.savedBoothClientEventKey.isNullOrBlank())
+        assertEquals(remote.savedBoothClientEventKey, store.queue.value.single().id)
+    }
+
+    @Test
     fun `sync replaces local poster with authoritative server feature`() = runBlocking {
         val local = AssignmentMapFeature(
             id = "local-poster",
@@ -169,6 +224,7 @@ class AssignmentOfflineRepositoryTest {
 
         assertEquals(SyncProcessOutcome.COMPLETE, outcome)
         assertEquals(50.8, remote.createdPosterInput?.latitude)
+        assertEquals("event-1", remote.createdPosterClientEventKey)
         assertEquals("poster-server", store.mapData?.value?.features?.single()?.id)
         assertEquals(SyncQueueStatus.SYNCED, store.queue.value.single().status)
     }
@@ -465,6 +521,8 @@ class AssignmentOfflineRepositoryTest {
             AssignmentMapData(),
         ),
         private val mapDelayMillis: Long = 0,
+        private val posterCreateResult: AssignmentResult<AssignmentMapFeature>? = null,
+        private val boothSaveResult: AssignmentResult<AssignmentMapFeature>? = null,
     ) : AssignmentRemoteDataSource {
         var mapLoadCalls = 0
         var updatedBuildingId: String? = null
@@ -472,6 +530,8 @@ class AssignmentOfflineRepositoryTest {
         var updatedBuildingClientEventKey: String? = null
         var updatedBuildingKnownUpdatedAt: String? = null
         var createdPosterInput: AssignmentLocationInput? = null
+        var createdPosterClientEventKey: String? = null
+        var savedBoothClientEventKey: String? = null
         override suspend fun loadAssignments(
             userId: String?,
             teamIds: List<String>,
@@ -525,12 +585,34 @@ class AssignmentOfflineRepositoryTest {
         override suspend fun createPosterLocation(
             assignmentId: String,
             input: AssignmentLocationInput,
+            clientEventKey: String?,
         ): AssignmentResult<AssignmentMapFeature> {
             createdPosterInput = input
+            createdPosterClientEventKey = clientEventKey
+            posterCreateResult?.let { return it }
             return AssignmentResult.Success(
                 AssignmentMapFeature(
                     id = "poster-server",
                     kind = AssignmentMapFeatureKind.POSTER,
+                    geometryGeoJson = input.pointGeoJson(),
+                    label = input.label,
+                    canUpdate = true,
+                ),
+            )
+        }
+
+        override suspend fun saveCampaignBoothLocation(
+            assignmentId: String,
+            existingId: String?,
+            input: AssignmentLocationInput,
+            clientEventKey: String?,
+        ): AssignmentResult<AssignmentMapFeature> {
+            savedBoothClientEventKey = clientEventKey
+            boothSaveResult?.let { return it }
+            return AssignmentResult.Success(
+                AssignmentMapFeature(
+                    id = existingId ?: "booth-server",
+                    kind = AssignmentMapFeatureKind.CAMPAIGN_BOOTH,
                     geometryGeoJson = input.pointGeoJson(),
                     label = input.label,
                     canUpdate = true,
@@ -669,9 +751,10 @@ class AssignmentOfflineRepositoryTest {
             kind: SyncEventKind,
             feature: AssignmentMapFeature,
             previousFeature: AssignmentMapFeature?,
+            eventId: String?,
         ): SyncQueueItem {
             val event = SyncQueueItem(
-                id = "event-${queue.value.size + 1}",
+                id = eventId ?: "event-${queue.value.size + 1}",
                 assignmentId = assignmentId,
                 kind = kind,
                 targetStatus = AssignmentStatus.UNKNOWN,

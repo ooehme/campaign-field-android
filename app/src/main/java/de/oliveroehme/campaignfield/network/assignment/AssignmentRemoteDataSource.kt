@@ -74,6 +74,7 @@ interface AssignmentRemoteDataSource {
     suspend fun createPosterLocation(
         assignmentId: String,
         input: AssignmentLocationInput,
+        clientEventKey: String? = null,
     ): AssignmentResult<AssignmentMapFeature> = AssignmentResult.Failure(
         AssignmentFailure.unsupportedMutation(),
     )
@@ -92,6 +93,7 @@ interface AssignmentRemoteDataSource {
         assignmentId: String,
         existingId: String?,
         input: AssignmentLocationInput,
+        clientEventKey: String? = null,
     ): AssignmentResult<AssignmentMapFeature> = AssignmentResult.Failure(
         AssignmentFailure.unsupportedMutation(),
     )
@@ -349,10 +351,11 @@ class AssignmentHttpClient internal constructor(
     override suspend fun createPosterLocation(
         assignmentId: String,
         input: AssignmentLocationInput,
+        clientEventKey: String?,
     ): AssignmentResult<AssignmentMapFeature> = mutateLocation(
         request = Request.Builder()
             .url(configuration.apiEndpointSegments("assignments", assignmentId, "poster-locations"))
-            .post(input.toRequestBody())
+            .post(input.toRequestBody(clientEventKey))
             .build(),
         parse = mapDataParser::parsePoster,
     )
@@ -383,6 +386,7 @@ class AssignmentHttpClient internal constructor(
         assignmentId: String,
         existingId: String?,
         input: AssignmentLocationInput,
+        clientEventKey: String?,
     ): AssignmentResult<AssignmentMapFeature> {
         val requestBuilder = Request.Builder().url(
             if (existingId == null) {
@@ -392,7 +396,7 @@ class AssignmentHttpClient internal constructor(
             },
         )
         val request = if (existingId == null) {
-            requestBuilder.post(input.toRequestBody()).build()
+            requestBuilder.post(input.toRequestBody(clientEventKey)).build()
         } else {
             requestBuilder.patch(input.toRequestBody()).build()
         }
@@ -447,12 +451,13 @@ class AssignmentHttpClient internal constructor(
         }
     }
 
-    private fun AssignmentLocationInput.toRequestBody() = buildJsonObject {
+    private fun AssignmentLocationInput.toRequestBody(clientEventKey: String? = null) = buildJsonObject {
         put("lat", latitude)
         put("lng", longitude)
         label?.let { put("label", it) }
         note?.let { put("notes", it) }
         status?.let { put("status", it) }
+        clientEventKey?.let { put("client_event_key", it) }
     }.toString().toRequestBody(JSON_MEDIA_TYPE)
 
     private fun loadAllPages(pathSegments: List<String>): AssignmentResult<AssignmentPage> {

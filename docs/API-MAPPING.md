@@ -169,8 +169,9 @@ angezeigt. WorkManager startet bei App-Start, nach einer lokalen Mutation und be
 erfülltem Netzwerk-Constraint. Anders als die PWA bleiben
 Transport-/5xx-Fehler automatisch versuchbar, statt als manuell zu reparierendes `failed`
 liegen zu bleiben. Dauerhafte 403/409/422-Fehler werden mit Retry-Möglichkeit angezeigt.
-Der Gebäude-Vertrag ist durch `campaign-core` bestätigt. POST-Erstellungen von Postern
-und Aktionsständen besitzen dort noch keinen Idempotency-Key und bleiben ein Release-Risiko.
+Die Gebäude- und Standort-Verträge sind durch `campaign-core` bestätigt. Poster- und
+Aktionsstand-Erstellungen senden ihre stabile Queue-ID als `client_event_key`; derselbe
+Schlüssel wird vom ersten Onlineversuch bis zu jedem Queue-Retry beibehalten.
 
 ## Fotos und Nachweise
 
@@ -196,7 +197,7 @@ anzeigen und niemals einen Servererfolg vortäuschen.
 1. Sanctum ist durch Phase 2 bestätigt; offen bleiben `Secure`, ein sicherer 4xx bei
    falscher Origin und eine verbindliche native Client-Origin (siehe `SANCTUM-SPIKE.md`).
 2. Finales Schema aller `can`-Flags und Statusübergänge.
-3. Idempotenz für Poster- und Aktionsstand-POSTs sowie Versionierung ihrer Updates.
+3. Versionierung für Assignment-, Poster- und Aktionsstand-Updates.
 4. Proof-/Foto-/Issue-Endpunkte, Multipart-Schema, Limits, EXIF- und Löschregeln.
 5. Teamstandort-Aufbewahrung, Frequenz, Sichtbarkeit und Löschsemantik.
 6. Delta-/Versionsfelder für Assignments, Areas, Gebäude und Standortdaten.
