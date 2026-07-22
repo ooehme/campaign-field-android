@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
                 CampaignFieldApp(
                     viewModel = sessionViewModel,
                     assignmentRepository = application.appContainer.assignmentRepository,
+                    syncRepository = application.appContainer.syncRepository,
                     coreApiHealthSource = application.appContainer.coreApiHealthSource,
                     locationSessionState = application.appContainer.locationSessionState,
                     currentLocationRequester = application.appContainer.currentLocationRequester,

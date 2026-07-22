@@ -2,8 +2,8 @@
 
 Native Android-Neuimplementierung der operativen Field-App für `campaign-core`.
 Das Repository enthält ein verifizierbares Projektgerüst, den abgeschlossenen
-Sanctum-Cookie-/CSRF-Spike, den produktiven Login-/Session-Lifecycle sowie die read-only
-Assignment-Liste und -Details.
+Sanctum-Cookie-/CSRF-Spike, den produktiven Login-/Session-Lifecycle sowie Assignment-
+Liste, Details, Statusaktionen und deren Offline-Synchronisierung.
 
 ## Leitplanken
 
@@ -18,7 +18,9 @@ Assignment-Liste und -Details.
 
 Enthalten sind Login, Session-Wiederherstellung, Profil/Teams, Logout, zentraler
 401-Cleanup, die App-Shell mit echtem API-/Standortstatus sowie Assignment-Liste und
-Assignment-Details mit Pagination, Referenzsortierung und Teamabgleich. Der technische Sanctum-Nachweis steht in
+Assignment-Details mit Pagination, Referenzsortierung und Teamabgleich. Assignment-Daten
+werden in Room gespeichert; Statusänderungen bleiben bei Netzausfall in einer persistenten,
+sichtbaren Queue und werden per WorkManager nach Wiederverbindung synchronisiert. Der technische Sanctum-Nachweis steht in
 [SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt die MapLibre-Karte aus
 Phase 5 der [Roadmap](docs/ROADMAP.md).
 

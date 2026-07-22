@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
+import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.network.assignment.AssignmentResult
+import de.oliveroehme.campaignfield.network.assignment.AssignmentDataSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +21,9 @@ data class AssignmentListUiState(
     val isLoading: Boolean = true,
     val items: List<AssignmentSummary> = emptyList(),
     val errorMessage: String? = null,
+    val isUsingCachedData: Boolean = false,
+    val cachedAtEpochMillis: Long? = null,
+    val offlineReadyAssignmentIds: Set<String> = emptySet(),
 )
 
 class AssignmentListViewModel(
@@ -30,6 +35,18 @@ class AssignmentListViewModel(
     private var loadJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            repository.observeCachedAssignments(profile).collect { cachedPage ->
+                if (cachedPage != null) {
+                    mutableState.update { current -> current.copy(items = cachedPage.items) }
+                }
+            }
+        }
+        viewModelScope.launch {
+            repository.observeOfflineReadyAssignmentIds().collect { ids ->
+                mutableState.update { current -> current.copy(offlineReadyAssignmentIds = ids) }
+            }
+        }
         refresh()
     }
 
@@ -43,7 +60,13 @@ class AssignmentListViewModel(
                         isLoading = false,
                         items = result.value.items,
                         errorMessage = null,
+                        isUsingCachedData = result.source == AssignmentDataSource.LOCAL_CACHE,
+                        cachedAtEpochMillis = result.cachedAtEpochMillis,
                     )
+                }.also {
+                    viewModelScope.launch {
+                        repository.warmAssignments(result.value.items.map(AssignmentSummary::id))
+                    }
                 }
                 is AssignmentResult.Failure -> mutableState.update {
                     it.copy(isLoading = false, errorMessage = result.failure.userMessage)
@@ -66,6 +89,10 @@ data class AssignmentDetailUiState(
     val isLoading: Boolean = true,
     val assignment: AssignmentDetail? = null,
     val errorMessage: String? = null,
+    val isUsingCachedData: Boolean = false,
+    val cachedAtEpochMillis: Long? = null,
+    val isChangingStatus: Boolean = false,
+    val statusMessage: String? = null,
 )
 
 class AssignmentDetailViewModel(
@@ -75,8 +102,16 @@ class AssignmentDetailViewModel(
     private val mutableState = MutableStateFlow(AssignmentDetailUiState())
     val state: StateFlow<AssignmentDetailUiState> = mutableState.asStateFlow()
     private var loadJob: Job? = null
+    private var statusJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            repository.observeCachedAssignment(assignmentId).collect { assignment ->
+                if (assignment != null) {
+                    mutableState.update { current -> current.copy(assignment = assignment) }
+                }
+            }
+        }
         refresh()
     }
 
@@ -88,9 +123,40 @@ class AssignmentDetailViewModel(
                 is AssignmentResult.Success -> mutableState.value = AssignmentDetailUiState(
                     isLoading = false,
                     assignment = result.value,
+                    isUsingCachedData = result.source == AssignmentDataSource.LOCAL_CACHE,
+                    cachedAtEpochMillis = result.cachedAtEpochMillis,
                 )
                 is AssignmentResult.Failure -> mutableState.update {
                     it.copy(isLoading = false, errorMessage = result.failure.userMessage)
+                }
+            }
+        }
+    }
+
+    fun changeStatus(status: AssignmentStatus) {
+        val assignment = mutableState.value.assignment ?: return
+        if (statusJob?.isActive == true) return
+        mutableState.update {
+            it.copy(isChangingStatus = true, errorMessage = null, statusMessage = null)
+        }
+        statusJob = viewModelScope.launch {
+            when (val result = repository.changeStatus(assignment, status)) {
+                is AssignmentResult.Success -> mutableState.update { current ->
+                    current.copy(
+                        assignment = result.value.assignment,
+                        isChangingStatus = false,
+                        statusMessage = if (result.value.queued) {
+                            "Lokal gespeichert. Die Änderung wird bei bestehender Verbindung synchronisiert."
+                        } else {
+                            "Status wurde auf dem Server gespeichert."
+                        },
+                    )
+                }
+                is AssignmentResult.Failure -> mutableState.update { current ->
+                    current.copy(
+                        isChangingStatus = false,
+                        errorMessage = result.failure.userMessage,
+                    )
                 }
             }
         }

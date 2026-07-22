@@ -68,14 +68,15 @@ ein lokal gespeichertes Profil nur zur kurzen UI-Hydration verwendet; erst ein e
 
 ## Offline und Sync
 
-Room speichert Assignment-Snapshots, Zielgebiete, Gebäude, Poster-/Aktionsstandorte,
-Nachweismetadaten und Queue-Events. Queue-Zustände: `pending`, `syncing`, `synced`,
-`failed`. Payloads werden typisiert statt als beliebiges JSON persistiert, soweit der
-Backend-Vertrag stabil ist.
+Im aktuellen Ausbaustand speichert Room Assignment-Snapshots/-Details und typisierte
+Assignment-Status-Events. Zielgebiete, Gebäude, Poster-/Aktionsstandorte und
+Nachweismetadaten werden mit den zugehörigen Fachphasen ergänzt. Queue-Zustände:
+`pending`, `syncing`, `synced`, `failed`; Payloads werden nicht als beliebige Requests,
+sondern als fachlich typisierte Felder persistiert.
 
 WorkManager verarbeitet nur Requests mit Netzwerk-Constraint. 401 stoppt den Lauf,
-403/422 werden dauerhaft sichtbar `failed`, 5xx und Transportfehler verwenden
-Backoff. Erfolgreiche Events werden erst nach lokalem Merge als `synced` markiert.
+403/409/422 werden dauerhaft sichtbar `failed`, 5xx und Transportfehler bleiben `pending`
+und verwenden Backoff. Erfolgreiche Events werden erst nach lokalem Merge als `synced` markiert.
 `client_event_key` beziehungsweise ein final abgestimmter Idempotency-Key schützt Retries.
 
 ## Karten, Standort und Sensoren

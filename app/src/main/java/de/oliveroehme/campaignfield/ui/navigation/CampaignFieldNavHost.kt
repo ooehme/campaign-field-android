@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
+import de.oliveroehme.campaignfield.data.sync.SyncRepository
 import de.oliveroehme.campaignfield.ui.screens.AssignmentsScreen
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.ui.assignment.AssignmentDetailViewModel
@@ -20,6 +21,7 @@ import de.oliveroehme.campaignfield.ui.screens.MapScreen
 import de.oliveroehme.campaignfield.ui.screens.ProfileScreen
 import de.oliveroehme.campaignfield.ui.screens.ProofScreen
 import de.oliveroehme.campaignfield.ui.screens.SyncScreen
+import de.oliveroehme.campaignfield.ui.sync.SyncViewModel
 
 @Composable
 fun CampaignFieldNavHost(
@@ -27,6 +29,7 @@ fun CampaignFieldNavHost(
     contentPadding: PaddingValues,
     profile: UserProfile,
     assignmentRepository: AssignmentRepository,
+    syncRepository: SyncRepository,
     isRefreshingProfile: Boolean,
     isLoggingOut: Boolean,
     onRefreshProfile: () -> Unit,
@@ -41,9 +44,14 @@ fun CampaignFieldNavHost(
                 factory = AssignmentListViewModel.factory(assignmentRepository, profile),
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
+            val syncViewModel: SyncViewModel = viewModel(
+                factory = SyncViewModel.factory(syncRepository),
+            )
+            val syncState by syncViewModel.state.collectAsStateWithLifecycle()
             AssignmentsScreen(
                 contentPadding = contentPadding,
                 state = state,
+                syncState = syncState,
                 onRefresh = viewModel::refresh,
                 onOpenSync = {
                     navController.navigate(AppDestination.Sync.route) { launchSingleTop = true }
@@ -63,10 +71,17 @@ fun CampaignFieldNavHost(
                 factory = AssignmentDetailViewModel.factory(assignmentRepository, assignmentId),
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
+            val syncViewModel: SyncViewModel = viewModel(
+                viewModelStoreOwner = backStackEntry,
+                factory = SyncViewModel.factory(syncRepository),
+            )
+            val syncState by syncViewModel.state.collectAsStateWithLifecycle()
             AssignmentDetailScreen(
                 contentPadding = contentPadding,
                 state = state,
+                syncState = syncState,
                 onRefresh = viewModel::refresh,
+                onChangeStatus = viewModel::changeStatus,
                 onOpenMap = {
                     navController.navigate(AppDestination.assignmentMapRoute(assignmentId)) {
                         launchSingleTop = true
@@ -101,7 +116,16 @@ fun CampaignFieldNavHost(
             MapScreen(contentPadding, includeStatusBarInset = true)
         }
         composable(AppDestination.Sync.route) {
-            SyncScreen(contentPadding)
+            val viewModel: SyncViewModel = viewModel(
+                factory = SyncViewModel.factory(syncRepository),
+            )
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            SyncScreen(
+                contentPadding = contentPadding,
+                state = state,
+                onSynchronize = viewModel::synchronize,
+                onRetry = viewModel::retry,
+            )
         }
         composable(AppDestination.Profile.route) {
             ProfileScreen(

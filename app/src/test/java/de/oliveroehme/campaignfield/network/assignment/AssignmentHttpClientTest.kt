@@ -1,5 +1,6 @@
 package de.oliveroehme.campaignfield.network.assignment
 
+import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import de.oliveroehme.campaignfield.network.auth.PersistentCookieJar
 import de.oliveroehme.campaignfield.network.auth.SanctumHttpClient
@@ -90,6 +91,19 @@ class AssignmentHttpClientTest {
         val failure = client.loadAssignment("9") as AssignmentResult.Failure
         assertEquals(AssignmentFailureKind.SERVER, failure.failure.kind)
         assertTrue(failure.failure.userMessage.contains("vorübergehend"))
+    }
+
+    @Test
+    fun `patches assignment status and parses authoritative response`() = runBlocking {
+        server.enqueue(jsonResponse("""{"data":{"id":9,"title":"Detail","status":"paused"}}"""))
+
+        val result = client.updateAssignmentStatus("9", AssignmentStatus.PAUSED)
+
+        assertEquals(AssignmentStatus.PAUSED, (result as AssignmentResult.Success).value.summary.status)
+        val request = server.takeRequest()
+        assertEquals("PATCH", request.method)
+        assertEquals("/api/assignments/9", request.path)
+        assertEquals("""{"status":"paused"}""", request.body.readUtf8())
     }
 
     private fun jsonResponse(body: String): MockResponse = MockResponse()

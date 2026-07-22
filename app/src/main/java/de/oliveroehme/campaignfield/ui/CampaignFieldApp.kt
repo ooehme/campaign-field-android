@@ -3,6 +3,7 @@ package de.oliveroehme.campaignfield.ui
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
@@ -12,6 +13,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
 import de.oliveroehme.campaignfield.data.auth.AuthState
+import de.oliveroehme.campaignfield.data.sync.SyncRepository
 import de.oliveroehme.campaignfield.location.AndroidCurrentLocationRequester
 import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
 import de.oliveroehme.campaignfield.network.CoreApiHealthSource
@@ -31,6 +33,7 @@ import kotlinx.coroutines.delay
 fun CampaignFieldApp(
     viewModel: SessionViewModel,
     assignmentRepository: AssignmentRepository,
+    syncRepository: SyncRepository,
     coreApiHealthSource: CoreApiHealthSource,
     locationSessionState: InMemoryLocationSessionState,
     currentLocationRequester: AndroidCurrentLocationRequester,
@@ -54,6 +57,7 @@ fun CampaignFieldApp(
             is AuthState.SignedIn -> AuthenticatedApp(
                 state = state,
                 assignmentRepository = assignmentRepository,
+                syncRepository = syncRepository,
                 coreApiHealthSource = coreApiHealthSource,
                 locationSessionState = locationSessionState,
                 currentLocationRequester = currentLocationRequester,
@@ -65,6 +69,7 @@ fun CampaignFieldApp(
             is AuthState.SigningOut -> AuthenticatedApp(
                 state = AuthState.SignedIn(state.profile),
                 assignmentRepository = assignmentRepository,
+                syncRepository = syncRepository,
                 coreApiHealthSource = coreApiHealthSource,
                 locationSessionState = locationSessionState,
                 currentLocationRequester = currentLocationRequester,
@@ -81,6 +86,7 @@ fun CampaignFieldApp(
 private fun AuthenticatedApp(
     state: AuthState.SignedIn,
     assignmentRepository: AssignmentRepository,
+    syncRepository: SyncRepository,
     coreApiHealthSource: CoreApiHealthSource,
     locationSessionState: InMemoryLocationSessionState,
     currentLocationRequester: AndroidCurrentLocationRequester,
@@ -90,6 +96,9 @@ private fun AuthenticatedApp(
     onLogout: () -> Unit,
 ) {
     val navController = rememberNavController()
+    LaunchedEffect(syncRepository) {
+        syncRepository.synchronize()
+    }
     val route = navController.currentBackStackEntryAsState().value?.destination?.route
     val locationAccessState = rememberLocationAccessState(
         sessionState = locationSessionState,
@@ -126,6 +135,7 @@ private fun AuthenticatedApp(
             contentPadding = innerPadding,
             profile = state.profile,
             assignmentRepository = assignmentRepository,
+            syncRepository = syncRepository,
             isRefreshingProfile = isRefreshingProfile,
             isLoggingOut = isLoggingOut,
             onRefreshProfile = onRefreshProfile,

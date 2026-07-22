@@ -16,6 +16,10 @@ internal class AndroidLocalSessionCleaner(
     private val cookieJar: PersistentCookieJar,
     private val profileStore: UserProfileStore,
     private val locationState: InMemoryLocationSessionState,
+    private val clearOfflineData: () -> Boolean = {
+        val databaseFile = context.applicationContext.getDatabasePath(DATABASE_NAME)
+        !databaseFile.exists() || context.applicationContext.deleteDatabase(DATABASE_NAME)
+    },
 ) : LocalSessionCleaner {
     private val applicationContext = context.applicationContext
 
@@ -39,10 +43,7 @@ internal class AndroidLocalSessionCleaner(
             WorkManager.getInstance(applicationContext).cancelAllWorkByTag(SESSION_WORK_TAG)
             true
         }
-        DATABASE_NAMES.forEach { databaseName ->
-            val databaseFile = applicationContext.getDatabasePath(databaseName)
-            if (databaseFile.exists()) attempt { applicationContext.deleteDatabase(databaseName) }
-        }
+        attempt(clearOfflineData)
         SESSION_DIRECTORIES.forEach { directoryName ->
             val directory = File(applicationContext.filesDir, directoryName)
             if (directory.exists()) attempt(directory::deleteRecursively)
@@ -55,7 +56,7 @@ internal class AndroidLocalSessionCleaner(
 
     companion object {
         const val SESSION_WORK_TAG = "campaign-field-session"
-        private val DATABASE_NAMES = listOf("campaign-field.db")
+        private const val DATABASE_NAME = "campaign-field.db"
         private val SESSION_DIRECTORIES = listOf("offline", "photos", "proofs", "queue")
     }
 }

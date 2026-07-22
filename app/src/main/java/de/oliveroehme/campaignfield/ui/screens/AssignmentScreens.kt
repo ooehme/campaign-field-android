@@ -36,8 +36,12 @@ import androidx.compose.ui.unit.dp
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
+import de.oliveroehme.campaignfield.domain.SyncQueueItem
+import de.oliveroehme.campaignfield.domain.SyncQueueStatus
+import de.oliveroehme.campaignfield.domain.availableStatusActions
 import de.oliveroehme.campaignfield.ui.assignment.AssignmentDetailUiState
 import de.oliveroehme.campaignfield.ui.assignment.AssignmentListUiState
+import de.oliveroehme.campaignfield.ui.sync.SyncUiState
 import de.oliveroehme.campaignfield.ui.components.FieldActionButton
 import de.oliveroehme.campaignfield.ui.components.FieldButtonVariant
 import de.oliveroehme.campaignfield.ui.components.FieldEmptyState
@@ -70,6 +74,7 @@ import java.util.Locale
 fun AssignmentsScreen(
     contentPadding: PaddingValues,
     state: AssignmentListUiState,
+    syncState: SyncUiState,
     onRefresh: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenAssignment: (String) -> Unit,
@@ -94,7 +99,7 @@ fun AssignmentsScreen(
                         style = MaterialTheme.typography.headlineMedium,
                     )
                 }
-                SyncReadyIcon()
+                SyncStatusIcon(syncState)
             }
         }
 
@@ -121,11 +126,28 @@ fun AssignmentsScreen(
                 )
             }
             else -> {
+                if (state.isUsingCachedData) {
+                    item {
+                        FieldMessagePanel(
+                            message = buildString {
+                                append("Offline-Daten")
+                                state.cachedAtEpochMillis?.let { append(" vom ${formatEpochTime(it)}") }
+                                append(" werden angezeigt. Änderungen bleiben lokal, bis die Verbindung wieder verfügbar ist.")
+                            },
+                            tint = FieldAmber,
+                        )
+                    }
+                }
                 state.errorMessage?.let { message ->
                     item { FieldMessagePanel(message = message, tint = FieldRed) }
                 }
                 items(state.items, key = AssignmentSummary::id) { assignment ->
-                    AssignmentCard(assignment = assignment, onOpenAssignment = onOpenAssignment)
+                    AssignmentCard(
+                        assignment = assignment,
+                        isOfflineReady = assignment.id in state.offlineReadyAssignmentIds,
+                        syncEvents = syncState.events.filter { it.assignmentId == assignment.id },
+                        onOpenAssignment = onOpenAssignment,
+                    )
                 }
             }
         }
@@ -145,6 +167,8 @@ fun AssignmentsScreen(
 @Composable
 private fun AssignmentCard(
     assignment: AssignmentSummary,
+    isOfflineReady: Boolean,
+    syncEvents: List<SyncQueueItem>,
     onOpenAssignment: (String) -> Unit,
 ) {
     val active = assignment.status == AssignmentStatus.ACTIVE
@@ -183,8 +207,13 @@ private fun AssignmentCard(
                 label = assignment.status.displayName,
                 tone = assignment.status.tone(forceActiveWarning = active),
             )
-            SmallStateIcon(FieldIcons.Database, FieldMuted, "Lokaler Datenstatus")
-            SmallStateIcon(FieldIcons.RefreshCcw, FieldGreen, "Sync bereit")
+            SmallStateIcon(
+                FieldIcons.Database,
+                if (isOfflineReady) FieldGreen else FieldAmber,
+                if (isOfflineReady) "Offline verfügbar" else "Offline-Daten werden vorbereitet",
+            )
+            val syncVisual = assignmentSyncVisual(syncEvents)
+            SmallStateIcon(FieldIcons.RefreshCcw, syncVisual.first, syncVisual.second)
         }
 
         Column(
@@ -234,20 +263,26 @@ private fun SmallStateIcon(
 }
 
 @Composable
-private fun SyncReadyIcon() {
+private fun SyncStatusIcon(state: SyncUiState) {
+    val (tint, label) = when {
+        state.summary.failed > 0 -> FieldRed to "${state.summary.failed} Sync-Fehler"
+        state.summary.syncing > 0 -> FieldCyan to "Sync läuft"
+        state.summary.pending > 0 -> FieldAmber to "${state.summary.pending} Änderungen offen"
+        else -> FieldGreen to "Sync bereit"
+    }
     Box(
         modifier = Modifier
             .size(36.dp)
             .clip(FieldShape)
-            .background(FieldGreen.copy(alpha = 0.10f))
-            .border(1.dp, FieldGreen.copy(alpha = 0.50f), FieldShape),
+            .background(tint.copy(alpha = 0.10f))
+            .border(1.dp, tint.copy(alpha = 0.50f), FieldShape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             modifier = Modifier.size(16.dp),
             imageVector = FieldIcons.RefreshCcw,
-            contentDescription = "Sync bereit",
-            tint = FieldGreen,
+            contentDescription = label,
+            tint = tint,
         )
     }
 }
@@ -275,7 +310,9 @@ private fun AssignmentMetaRow(
 fun AssignmentDetailScreen(
     contentPadding: PaddingValues,
     state: AssignmentDetailUiState,
+    syncState: SyncUiState,
     onRefresh: () -> Unit,
+    onChangeStatus: (AssignmentStatus) -> Unit,
     onOpenMap: () -> Unit,
     onOpenProof: () -> Unit,
     onOpenSync: () -> Unit,
@@ -294,9 +331,14 @@ fun AssignmentDetailScreen(
         state.assignment != null -> AssignmentDetailContent(
             contentPadding = contentPadding,
             detail = state.assignment,
+            syncState = syncState,
             isRefreshing = state.isLoading,
             errorMessage = state.errorMessage,
-            onRefresh = onRefresh,
+            isUsingCachedData = state.isUsingCachedData,
+            cachedAtEpochMillis = state.cachedAtEpochMillis,
+            isChangingStatus = state.isChangingStatus,
+            statusMessage = state.statusMessage,
+            onChangeStatus = onChangeStatus,
             onOpenMap = onOpenMap,
             onOpenProof = onOpenProof,
             onOpenSync = onOpenSync,
@@ -308,14 +350,23 @@ fun AssignmentDetailScreen(
 private fun AssignmentDetailContent(
     contentPadding: PaddingValues,
     detail: AssignmentDetail,
+    syncState: SyncUiState,
     isRefreshing: Boolean,
     errorMessage: String?,
-    onRefresh: () -> Unit,
+    isUsingCachedData: Boolean,
+    cachedAtEpochMillis: Long?,
+    isChangingStatus: Boolean,
+    statusMessage: String?,
+    onChangeStatus: (AssignmentStatus) -> Unit,
     onOpenMap: () -> Unit,
     onOpenProof: () -> Unit,
     onOpenSync: () -> Unit,
 ) {
     val assignment = detail.summary
+    val assignmentSyncEvents = syncState.events.filter { it.assignmentId == assignment.id }
+    val hasPendingStatusChange = assignmentSyncEvents.any {
+        it.status == SyncQueueStatus.PENDING || it.status == SyncQueueStatus.SYNCING
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -344,7 +395,24 @@ private fun AssignmentDetailContent(
         if (isRefreshing) {
             FieldMessagePanel(message = "Auftrag wird aktualisiert …", tint = FieldCyan)
         }
+        if (isUsingCachedData) {
+            FieldMessagePanel(
+                message = buildString {
+                    append("Gespeicherte Offline-Daten")
+                    cachedAtEpochMillis?.let { append(" vom ${formatEpochTime(it)}") }
+                    append(" werden angezeigt.")
+                },
+                tint = FieldAmber,
+            )
+        }
         errorMessage?.let { FieldMessagePanel(message = it, tint = FieldRed) }
+        statusMessage?.let { FieldMessagePanel(message = it, tint = FieldGreen) }
+        if (hasPendingStatusChange) {
+            FieldMessagePanel(
+                message = "Statusänderung lokal gespeichert – Synchronisierung steht noch aus.",
+                tint = FieldAmber,
+            )
+        }
 
         FieldPanel(modifier = Modifier.fillMaxWidth()) {
             DetailRow("Typ", assignment.type.displayName)
@@ -409,11 +477,31 @@ private fun AssignmentDetailContent(
         }
 
         DetailPanel(title = "Status") {
-            Text(
-                text = "Für diesen Status ist keine direkte Statusaktion verfügbar.",
-                color = FieldMuted,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            val actions = detail.availableStatusActions()
+            if (actions.isEmpty()) {
+                Text(
+                    text = "Für diesen Status ist keine direkte Statusaktion verfügbar.",
+                    color = FieldMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    actions.forEach { action ->
+                        FieldActionButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            text = action.label,
+                            enabled = !isChangingStatus && !hasPendingStatusChange,
+                            isLoading = isChangingStatus,
+                            variant = if (action.targetStatus == AssignmentStatus.CANCELLED) {
+                                FieldButtonVariant.Danger
+                            } else {
+                                FieldButtonVariant.Primary
+                            },
+                            onClick = { onChangeStatus(action.targetStatus) },
+                        )
+                    }
+                }
+            }
         }
 
         FieldActionButton(
@@ -488,6 +576,14 @@ private fun AssignmentError(
     }
 }
 
+private fun assignmentSyncVisual(events: List<SyncQueueItem>): Pair<Color, String> = when {
+    events.any { it.status == SyncQueueStatus.FAILED } -> FieldRed to "Sync-Fehler"
+    events.any { it.status == SyncQueueStatus.SYNCING } -> FieldCyan to "Sync läuft"
+    events.any { it.status == SyncQueueStatus.PENDING } -> FieldAmber to "Lokale Änderung offen"
+    events.any { it.status == SyncQueueStatus.SYNCED } -> FieldGreen to "Gesynct"
+    else -> FieldGreen to "Sync bereit"
+}
+
 private fun AssignmentStatus.tone(forceActiveWarning: Boolean = false): FieldStatusTone = when {
     this == AssignmentStatus.ACTIVE && forceActiveWarning -> FieldStatusTone.Warning
     this == AssignmentStatus.ACTIVE -> FieldStatusTone.Active
@@ -509,3 +605,8 @@ private fun formatDateTime(value: String): String {
     val date = runCatching { LocalDate.parse(value) }.getOrNull()
     return date?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.GERMANY)) ?: value
 }
+
+private fun formatEpochTime(epochMillis: Long): String =
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT)
+        .withLocale(Locale.GERMANY)
+        .format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))

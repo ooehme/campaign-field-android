@@ -158,6 +158,31 @@ fun FieldHeader(
                 )
             }
         }
+        if (coreApiStatus == CoreApiStatus.Unreachable) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .clip(FieldShape)
+                    .background(FieldAmber.copy(alpha = 0.10f))
+                    .border(1.dp, FieldAmber.copy(alpha = 0.40f), FieldShape)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    modifier = Modifier.size(16.dp),
+                    imageVector = FieldIcons.Server,
+                    contentDescription = null,
+                    tint = FieldAmber,
+                )
+                Text(
+                    modifier = Modifier.padding(start = 8.dp),
+                    text = "Core API nicht erreichbar. Änderungen werden später synchronisiert.",
+                    color = FieldAmber,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 

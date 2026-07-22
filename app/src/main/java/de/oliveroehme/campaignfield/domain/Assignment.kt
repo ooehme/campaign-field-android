@@ -66,6 +66,11 @@ data class AssignmentPermissions(
     val reportTeamLocation: Boolean = false,
 )
 
+data class AssignmentStatusAction(
+    val label: String,
+    val targetStatus: AssignmentStatus,
+)
+
 @Serializable
 data class AssignmentPage(
     val items: List<AssignmentSummary>,
@@ -110,6 +115,31 @@ enum class AssignmentStatus(
             it.apiValue == value?.trim()?.lowercase()
         } ?: UNKNOWN
     }
+}
+
+fun AssignmentDetail.availableStatusActions(): List<AssignmentStatusAction> = when (summary.status) {
+    AssignmentStatus.DRAFT -> buildList {
+        if (permissions.update) add(AssignmentStatusAction("Bereit setzen", AssignmentStatus.READY))
+        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+    }
+    AssignmentStatus.READY -> buildList {
+        if (permissions.start) add(AssignmentStatusAction("Starten", AssignmentStatus.ACTIVE))
+        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+    }
+    AssignmentStatus.ACTIVE -> buildList {
+        if (permissions.pause) add(AssignmentStatusAction("Pausieren", AssignmentStatus.PAUSED))
+        if (permissions.complete) add(AssignmentStatusAction("Abschließen", AssignmentStatus.COMPLETED))
+        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+    }
+    AssignmentStatus.PAUSED -> buildList {
+        if (permissions.start) add(AssignmentStatusAction("Fortsetzen", AssignmentStatus.ACTIVE))
+        if (permissions.complete) add(AssignmentStatusAction("Abschließen", AssignmentStatus.COMPLETED))
+        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+    }
+    AssignmentStatus.COMPLETED,
+    AssignmentStatus.CANCELLED,
+    AssignmentStatus.UNKNOWN,
+    -> emptyList()
 }
 
 fun List<AssignmentSummary>.forOperativeOverview(): List<AssignmentSummary> =

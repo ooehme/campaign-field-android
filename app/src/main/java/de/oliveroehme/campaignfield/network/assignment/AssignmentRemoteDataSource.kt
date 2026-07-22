@@ -3,6 +3,7 @@ package de.oliveroehme.campaignfield.network.assignment
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
+import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.TeamSummary
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import java.io.ByteArrayOutputStream
@@ -14,6 +15,8 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.ResponseBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 interface AssignmentRemoteDataSource {
     suspend fun loadAssignments(
@@ -22,6 +25,13 @@ interface AssignmentRemoteDataSource {
     ): AssignmentResult<AssignmentPage>
 
     suspend fun loadAssignment(id: String): AssignmentResult<AssignmentDetail>
+
+    suspend fun updateAssignmentStatus(
+        id: String,
+        status: AssignmentStatus,
+    ): AssignmentResult<AssignmentDetail> = AssignmentResult.Failure(
+        AssignmentFailure.unsupportedMutation(),
+    )
 }
 
 class AssignmentHttpClient internal constructor(
@@ -86,6 +96,32 @@ class AssignmentHttpClient internal constructor(
             }
         }
 
+    override suspend fun updateAssignmentStatus(
+        id: String,
+        status: AssignmentStatus,
+    ): AssignmentResult<AssignmentDetail> = withContext(ioDispatcher) {
+        val body = """{"status":"${status.apiValue}"}""".toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url(configuration.apiEndpointSegments("assignments", id))
+            .patch(body)
+            .build()
+        when (val response = execute(request)) {
+            is RawResponse.Success -> runCatching { parser.parseDetail(response.body) }
+                .fold(
+                    onSuccess = { AssignmentResult.Success(it) },
+                    onFailure = { AssignmentResult.Failure(AssignmentFailure.invalidResponse()) },
+                )
+            is RawResponse.HttpFailure -> AssignmentResult.Failure(
+                AssignmentFailure.fromHttp(
+                    response.status,
+                    detailRequest = true,
+                    mutationRequest = true,
+                ),
+            )
+            RawResponse.TransportFailure -> AssignmentResult.Failure(AssignmentFailure.network())
+        }
+    }
+
     private fun loadAllPages(pathSegments: List<String>): AssignmentResult<AssignmentPage> {
         val items = mutableListOf<AssignmentSummary>()
         var requestedPage = 1
@@ -130,8 +166,10 @@ class AssignmentHttpClient internal constructor(
         )
     }
 
-    private fun execute(url: HttpUrl): RawResponse = try {
-        httpClient.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+    private fun execute(url: HttpUrl): RawResponse = execute(Request.Builder().url(url).get().build())
+
+    private fun execute(request: Request): RawResponse = try {
+        httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@use RawResponse.HttpFailure(response.code)
             val body = response.body.readLimitedBytes()
             if (body == null) {
@@ -172,12 +210,22 @@ class AssignmentHttpClient internal constructor(
         const val MAX_PAGES = 100
         const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
         const val INVALID_RESPONSE_STATUS = -1
+        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
 
 sealed interface AssignmentResult<out T> {
-    data class Success<T>(val value: T) : AssignmentResult<T>
+    data class Success<T>(
+        val value: T,
+        val source: AssignmentDataSource = AssignmentDataSource.REMOTE,
+        val cachedAtEpochMillis: Long? = null,
+    ) : AssignmentResult<T>
     data class Failure(val failure: AssignmentFailure) : AssignmentResult<Nothing>
+}
+
+enum class AssignmentDataSource {
+    REMOTE,
+    LOCAL_CACHE,
 }
 
 enum class AssignmentFailureKind {
@@ -186,6 +234,8 @@ enum class AssignmentFailureKind {
     FORBIDDEN,
     NOT_FOUND,
     SERVER,
+    VALIDATION,
+    CONFLICT,
     INVALID_RESPONSE,
     UNEXPECTED,
 }
@@ -211,20 +261,35 @@ data class AssignmentFailure(
             "Die Assignment-Daten konnten nicht verarbeitet werden. Bitte erneut versuchen.",
         )
 
-        internal fun fromHttp(status: Int, detailRequest: Boolean): AssignmentFailure {
+        internal fun unsupportedMutation() = AssignmentFailure(
+            AssignmentFailureKind.UNEXPECTED,
+            null,
+            "Die Statusänderung ist für diese Datenquelle nicht verfügbar.",
+        )
+
+        internal fun fromHttp(
+            status: Int,
+            detailRequest: Boolean,
+            mutationRequest: Boolean = false,
+        ): AssignmentFailure {
             if (status == -1) return invalidResponse()
             val kind = when {
                 status == 401 -> AssignmentFailureKind.UNAUTHORIZED
                 status == 403 -> AssignmentFailureKind.FORBIDDEN
                 status == 404 -> AssignmentFailureKind.NOT_FOUND
+                status == 409 -> AssignmentFailureKind.CONFLICT
+                status == 422 -> AssignmentFailureKind.VALIDATION
                 status in 500..599 -> AssignmentFailureKind.SERVER
                 else -> AssignmentFailureKind.UNEXPECTED
             }
             val message = when (kind) {
                 AssignmentFailureKind.UNAUTHORIZED ->
                     "Die Sitzung ist abgelaufen. Bitte erneut anmelden."
-                AssignmentFailureKind.FORBIDDEN ->
+                AssignmentFailureKind.FORBIDDEN -> if (mutationRequest) {
+                    "Keine Berechtigung für diese Statusänderung."
+                } else {
                     "Keine Berechtigung, diese Aufträge anzuzeigen."
+                }
                 AssignmentFailureKind.NOT_FOUND -> if (detailRequest) {
                     "Der Auftrag wurde nicht gefunden."
                 } else {
@@ -232,6 +297,10 @@ data class AssignmentFailure(
                 }
                 AssignmentFailureKind.SERVER ->
                     "Der Server ist vorübergehend nicht verfügbar. Bitte später erneut versuchen."
+                AssignmentFailureKind.VALIDATION ->
+                    "Die Statusänderung wurde vom Server abgelehnt."
+                AssignmentFailureKind.CONFLICT ->
+                    "Der Auftrag wurde zwischenzeitlich geändert. Bitte Daten aktualisieren."
                 else -> "Aufträge konnten nicht geladen werden. Bitte erneut versuchen."
             }
             return AssignmentFailure(kind, status, message)

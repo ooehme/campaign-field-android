@@ -1,6 +1,7 @@
 # Roadmap
 
-Status: Phasen 1 bis 4 abgeschlossen; Karten- und Standortfunktionen beginnen mit Phase 5.
+Status: Phasen 1 bis 4 abgeschlossen; der Assignment-Teil von Phase 7 ist vorgezogen
+umgesetzt. Karten- und Standortfunktionen beginnen mit Phase 5.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -127,8 +128,10 @@ implementiert und durch Unit-/MockWebServer-Tests abgedeckt.
 Semantik `draft`/`ready`; Zielgebiets-Exklusivität; ETag/`updated_at`/Pagination.
 
 **Ergebnis/Restpunkte:** Direkte, `{data: ...}`- und Laravel-Pagination-Antworten werden
-defensiv gelesen; unbekannte Typen/Status bleiben darstellbar. Statusmutationen bleiben bis
-zur verbindlichen Übergangs- und `can`-Matrix bewusst ausgesetzt.
+defensiv gelesen; unbekannte Typen/Status bleiben darstellbar. Die in der PWA verwendeten
+Statusübergänge sind nun strikt über die zugehörigen `can`-Flags umgesetzt und an die
+persistente Offline-Queue angebunden. Die endgültige serverseitige Statusmatrix bleibt zu
+bestätigen.
 
 ## 5. MapLibre-Karte und Standort
 
@@ -190,6 +193,14 @@ große Gebäudemengen; Karten-Tap außerhalb Zielgebiet.
 vs.-GeoJSON-Pflicht; erlaubte Poster-/Booth-Status; serverseitige Gebietskontrolle.
 
 ## 7. Room-Cache und Offline-Sync-Queue
+
+**Teilstatus:** Assignment-Snapshots/-Details, Statusmutationen und die Sync-Oberfläche
+sind am 22.07.2026 umgesetzt. Room überlebt Prozessneustarts; WorkManager nutzt
+Netzwerk-Constraint, exponentielles Backoff und Einzelinstanz. Queue-Zustände, Versuche,
+Fehler, manuelles Retry, Fünf-Minuten-Recovery für verwaistes `syncing` und 24-Stunden-
+Retention für `synced` sind sichtbar. Serverzustand wird vor `synced` lokal gespeichert;
+Logout/401 leeren Cache und Queue. Gebäude, Areas, Poster-/Aktionsstandorte und deren
+Queue-Arten folgen mit den Phasen 5–6.
 
 **Ziel:** Lesen und Arbeiten bei instabilem Netz mit nachvollziehbarer, idempotenter Queue.
 

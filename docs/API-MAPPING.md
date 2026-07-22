@@ -161,6 +161,13 @@ als `client_event_key`. 401 muss den gesamten Sync stoppen; 403/422 bleiben sich
 5xx/Netzwerkfehler sind erneut versuchbar. Native ersetzt IndexedDB/TanStack Query durch
 Room, Repositories, Flow und WorkManager.
 
+Der native Assignment-Teil ist umgesetzt: Liste und Details fallen bei Transport-/5xx-
+Fehlern auf Room zurück, Statusänderungen werden als typisierte Queue-Events gespeichert
+und als Pending-Overlay angezeigt. WorkManager startet bei App-Start, nach einer lokalen
+Mutation und bei wieder erfülltem Netzwerk-Constraint. Anders als die PWA bleiben
+Transport-/5xx-Fehler automatisch versuchbar, statt als manuell zu reparierendes `failed`
+liegen zu bleiben. Dauerhafte 403/409/422-Fehler werden mit Retry-Möglichkeit angezeigt.
+
 ## Fotos und Nachweise
 
 Die Referenz hat nur eine Proof-Platzhalterseite. Es gibt kein lokales Foto-/Proof-Store,
