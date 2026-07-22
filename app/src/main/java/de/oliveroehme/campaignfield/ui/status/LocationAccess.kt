@@ -26,6 +26,8 @@ import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
 data class LocationAccessState(
     val hasPosition: Boolean,
     val isRequesting: Boolean,
+    val isPermissionGranted: Boolean,
+    val isLocationEnabled: Boolean,
     val statusLabel: String,
     val requestPosition: () -> Unit,
 )
@@ -94,6 +96,8 @@ fun rememberLocationAccessState(
     return LocationAccessState(
         hasPosition = lastLocation != null,
         isRequesting = isRequesting,
+        isPermissionGranted = hasFineLocationPermission,
+        isLocationEnabled = isLocationEnabled,
         statusLabel = statusLabel,
         requestPosition = {
             when {

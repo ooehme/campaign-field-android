@@ -95,6 +95,60 @@ data class AssignmentDetailUiState(
     val statusMessage: String? = null,
 )
 
+data class ScannerUiState(
+    val isLoading: Boolean = true,
+    val activeAssignments: List<AssignmentDetail> = emptyList(),
+    val errorMessage: String? = null,
+)
+
+class ScannerViewModel(
+    private val repository: AssignmentRepository,
+    private val profile: UserProfile,
+) : ViewModel() {
+    private val mutableState = MutableStateFlow(ScannerUiState())
+    val state: StateFlow<ScannerUiState> = mutableState.asStateFlow()
+    private var loadJob: Job? = null
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        if (loadJob?.isActive == true) return
+        mutableState.value = ScannerUiState()
+        loadJob = viewModelScope.launch {
+            when (val result = repository.loadAssignments(profile)) {
+                is AssignmentResult.Failure -> mutableState.value = ScannerUiState(
+                    isLoading = false,
+                    errorMessage = result.failure.userMessage,
+                )
+                is AssignmentResult.Success -> {
+                    val active = result.value.items.filter { it.status == AssignmentStatus.ACTIVE }
+                    val details = active.mapNotNull { summary ->
+                        (repository.loadAssignment(summary.id) as? AssignmentResult.Success)?.value
+                    }
+                    mutableState.value = ScannerUiState(
+                        isLoading = false,
+                        activeAssignments = details,
+                        errorMessage = if (details.size < active.size) {
+                            "Ein Teil der aktiven Aufträge konnte nicht geladen werden."
+                        } else null,
+                    )
+                }
+            }
+        }
+    }
+
+    companion object {
+        fun factory(
+            repository: AssignmentRepository,
+            profile: UserProfile,
+        ): ViewModelProvider.Factory = factoryFor {
+            ScannerViewModel(repository, profile)
+        }
+    }
+}
+
 class AssignmentDetailViewModel(
     private val repository: AssignmentRepository,
     private val assignmentId: String,

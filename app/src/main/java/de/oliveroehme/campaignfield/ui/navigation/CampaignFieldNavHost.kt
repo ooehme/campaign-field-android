@@ -16,6 +16,7 @@ import de.oliveroehme.campaignfield.ui.screens.AssignmentsScreen
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.ui.assignment.AssignmentDetailViewModel
 import de.oliveroehme.campaignfield.ui.assignment.AssignmentListViewModel
+import de.oliveroehme.campaignfield.ui.assignment.ScannerViewModel
 import de.oliveroehme.campaignfield.ui.screens.AssignmentDetailScreen
 import de.oliveroehme.campaignfield.ui.screens.MapScreen
 import de.oliveroehme.campaignfield.ui.screens.ProfileScreen
@@ -123,7 +124,19 @@ fun CampaignFieldNavHost(
                 contentPadding = contentPadding,
                 includeStatusBarInset = false,
                 assignmentState = state,
+                scannerState = null,
+                userLabel = profile.name,
                 onRefreshAssignment = viewModel::refresh,
+                onOpenAssignmentDetails = {
+                    navController.navigate(AppDestination.assignmentDetailRoute(assignmentId)) {
+                        launchSingleTop = true
+                    }
+                },
+                onOpenProof = {
+                    navController.navigate(AppDestination.assignmentProofRoute(assignmentId)) {
+                        launchSingleTop = true
+                    }
+                },
                 configuration = mapConfiguration,
                 locationAccessState = locationAccessState,
                 locationSessionState = locationSessionState,
@@ -142,11 +155,19 @@ fun CampaignFieldNavHost(
             )
         }
         composable(AppDestination.Map.route) {
+            val viewModel: ScannerViewModel = viewModel(
+                factory = ScannerViewModel.factory(assignmentRepository, profile),
+            )
+            val state by viewModel.state.collectAsStateWithLifecycle()
             MapScreen(
                 contentPadding = contentPadding,
                 includeStatusBarInset = true,
                 assignmentState = null,
-                onRefreshAssignment = {},
+                scannerState = state,
+                userLabel = profile.name,
+                onRefreshAssignment = viewModel::refresh,
+                onOpenAssignmentDetails = {},
+                onOpenProof = {},
                 configuration = mapConfiguration,
                 locationAccessState = locationAccessState,
                 locationSessionState = locationSessionState,

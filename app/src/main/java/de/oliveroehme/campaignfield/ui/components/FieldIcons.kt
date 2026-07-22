@@ -159,6 +159,44 @@ object FieldIcons {
             "m9 11 3 3L22 4",
         )
     }
+
+    val Plus by lazy {
+        lucideIcon("Plus", "M5 12h14", "M12 5v14")
+    }
+
+    val Minus by lazy {
+        lucideIcon("Minus", "M5 12h14")
+    }
+
+    val Compass by lazy {
+        lucideIcon(
+            "Compass",
+            circle(12f, 12f, 10f),
+            "m16.24 7.76-1.48 4.43a2 2 0 0 1-1.27 1.27l-4.43 1.48 1.48-4.43a2 2 0 0 1 1.27-1.27z",
+        )
+    }
+
+    val Navigation2 by lazy {
+        lucideIcon("Navigation2", "m12 2 7 19-7-4-7 4z")
+    }
+
+    val MapPinned by lazy {
+        lucideIcon(
+            "MapPinned",
+            "M18 8c0 3.613-3.869 7.429-5.393 8.795a.83.83 0 0 1-1.214 0C9.87 15.429 6 11.613 6 8a6 6 0 0 1 12 0",
+            circle(12f, 8f, 2f),
+            "M8.714 14.833 3.734 16.5a1 1 0 0 0-.684.949v3.817a1 1 0 0 0 1.316.949l6.95-2.317a2 2 0 0 1 1.265 0l6.416 2.14a1 1 0 0 0 1.316-.949v-3.817a1 1 0 0 0-.684-.949l-4.7-1.566",
+        )
+    }
+
+    val Info by lazy {
+        lucideIcon(
+            "Info",
+            circle(12f, 12f, 10f),
+            "M12 16v-4",
+            "M12 8h.01",
+        )
+    }
 }
 
 private fun lucideIcon(name: String, vararg paths: String): ImageVector =
