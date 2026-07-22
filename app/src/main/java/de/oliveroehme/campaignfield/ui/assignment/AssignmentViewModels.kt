@@ -179,7 +179,15 @@ data class AssignmentDetailUiState(
 data class ScannerUiState(
     val isLoading: Boolean = true,
     val activeAssignments: List<AssignmentDetail> = emptyList(),
+    val mapEntries: List<ScannerAssignmentMapEntry> = emptyList(),
     val errorMessage: String? = null,
+    val changingBuildingId: String? = null,
+    val buildingStatusMessage: String? = null,
+)
+
+data class ScannerAssignmentMapEntry(
+    val assignment: AssignmentDetail,
+    val mapData: AssignmentMapData,
 )
 
 class ScannerViewModel(
@@ -189,6 +197,7 @@ class ScannerViewModel(
     private val mutableState = MutableStateFlow(ScannerUiState())
     val state: StateFlow<ScannerUiState> = mutableState.asStateFlow()
     private var loadJob: Job? = null
+    private var buildingStatusJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -203,16 +212,7 @@ class ScannerViewModel(
                     if (!mutableState.value.isLoading && activeIds == currentIds) {
                         return@collectLatest
                     }
-                    val details = active.mapNotNull { summary ->
-                        (repository.loadAssignment(summary.id) as? AssignmentResult.Success)?.value
-                    }
-                    mutableState.value = ScannerUiState(
-                        isLoading = false,
-                        activeAssignments = details,
-                        errorMessage = if (details.size < active.size) {
-                            "Ein Teil der aktiven Aufträge konnte nicht geladen werden."
-                        } else null,
-                    )
+                    loadActiveAssignments(active)
                 }
         }
         refresh()
@@ -229,19 +229,91 @@ class ScannerViewModel(
                 )
                 is AssignmentResult.Success -> {
                     val active = result.value.items.filter { it.status == AssignmentStatus.ACTIVE }
-                    val details = active.mapNotNull { summary ->
-                        (repository.loadAssignment(summary.id) as? AssignmentResult.Success)?.value
-                    }
-                    mutableState.value = ScannerUiState(
-                        isLoading = false,
-                        activeAssignments = details,
-                        errorMessage = if (details.size < active.size) {
-                            "Ein Teil der aktiven Aufträge konnte nicht geladen werden."
-                        } else null,
+                    loadActiveAssignments(active)
+                }
+            }
+        }
+    }
+
+    fun changeBuildingStatus(
+        assignmentId: String,
+        building: AssignmentMapFeature,
+        status: BuildingStatus,
+    ) {
+        val entry = mutableState.value.mapEntries.firstOrNull {
+            it.assignment.summary.id == assignmentId
+        } ?: return
+        if (buildingStatusJob?.isActive == true) return
+        mutableState.update {
+            it.copy(
+                changingBuildingId = building.id,
+                errorMessage = null,
+                buildingStatusMessage = null,
+            )
+        }
+        buildingStatusJob = viewModelScope.launch {
+            when (val result = repository.changeBuildingStatus(entry.assignment, building, status)) {
+                is AssignmentResult.Success -> mutableState.update { current ->
+                    current.copy(
+                        mapEntries = current.mapEntries.map { currentEntry ->
+                            if (currentEntry.assignment.summary.id != assignmentId) {
+                                currentEntry
+                            } else {
+                                currentEntry.copy(
+                                    mapData = currentEntry.mapData.copy(
+                                        features = currentEntry.mapData.features.map { feature ->
+                                            if (feature.id == building.id) {
+                                                result.value.building
+                                            } else feature
+                                        },
+                                    ),
+                                )
+                            }
+                        },
+                        changingBuildingId = null,
+                        buildingStatusMessage = if (result.value.queued) {
+                            "Gebäude lokal gespeichert. Synchronisation ausstehend."
+                        } else {
+                            "Gebäude aktualisiert."
+                        },
+                    )
+                }
+                is AssignmentResult.Failure -> mutableState.update { current ->
+                    current.copy(
+                        changingBuildingId = null,
+                        errorMessage = result.failure.userMessage,
                     )
                 }
             }
         }
+    }
+
+    private suspend fun loadActiveAssignments(active: List<AssignmentSummary>) {
+        val details = active.mapNotNull { summary ->
+            (repository.loadAssignment(summary.id) as? AssignmentResult.Success)?.value
+        }
+        var mapDataFailureMessage: String? = null
+        val mapEntries = details.mapNotNull { assignment ->
+            when (val result = repository.loadAssignmentMapData(assignment)) {
+                is AssignmentResult.Success -> ScannerAssignmentMapEntry(assignment, result.value)
+                is AssignmentResult.Failure -> {
+                    mapDataFailureMessage = mapDataFailureMessage ?: result.failure.userMessage
+                    null
+                }
+            }
+        }
+        mutableState.value = ScannerUiState(
+            isLoading = false,
+            activeAssignments = details,
+            mapEntries = mapEntries,
+            errorMessage = when {
+                details.size < active.size ->
+                    "Ein Teil der aktiven Aufträge konnte nicht geladen werden."
+                mapEntries.size < details.size ->
+                    mapDataFailureMessage ?: "Ein Teil der Kartendaten konnte nicht geladen werden."
+                else -> null
+            },
+        )
     }
 
     companion object {

@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
+import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
 import de.oliveroehme.campaignfield.domain.BuildingStatus
@@ -98,6 +99,8 @@ fun MapScreen(
     onOpenAssignmentDetails: () -> Unit,
     onOpenProof: () -> Unit,
     onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit = { _, _ -> },
+    onChangeScannerBuildingStatus: (String, AssignmentMapFeature, BuildingStatus) -> Unit =
+        { _, _, _ -> },
     configuration: MapConfiguration,
     locationAccessState: LocationAccessState,
     locationSessionState: InMemoryLocationSessionState,
@@ -241,6 +244,7 @@ fun MapScreen(
                     liveTracking = true
                 }
             },
+            onChangeBuildingStatus = onChangeScannerBuildingStatus,
         )
         return
     }
@@ -320,6 +324,7 @@ fun MapScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScannerMapFace(
     contentPadding: PaddingValues,
@@ -345,8 +350,32 @@ private fun ScannerMapFace(
     onReload: () -> Unit,
     onZoom: (Double) -> Unit,
     onToggleLive: () -> Unit,
+    onChangeBuildingStatus: (String, AssignmentMapFeature, BuildingStatus) -> Unit,
 ) {
     var showAssignmentStatus by remember { mutableStateOf(false) }
+    var selectedBuildingKey by remember { mutableStateOf<Pair<String, String>?>(null) }
+    val mapEntries = scannerState?.mapEntries.orEmpty()
+    val featureGeoJson = remember(mapEntries) {
+        AssignmentMapData(
+            buildingCount = mapEntries.sumOf { it.mapData.buildingCount },
+            posterCount = mapEntries.sumOf { it.mapData.posterCount },
+            features = mapEntries.flatMap { it.mapData.features },
+        ).toGeoJson()
+    }
+    val selectedBuilding = selectedBuildingKey?.let { (assignmentId, buildingId) ->
+        mapEntries.firstOrNull { it.assignment.summary.id == assignmentId }?.let { entry ->
+            entry.mapData.features.firstOrNull {
+                it.kind == AssignmentMapFeatureKind.BUILDING && it.id == buildingId
+            }?.let { building -> entry to building }
+        }
+    }?.takeIf { (entry, _) ->
+        lastLocation?.let { location ->
+            FieldGeoJson.contains(
+                entry.assignment.summary.area?.geoJson,
+                MapCoordinate(location.latitude, location.longitude),
+            )
+        } == true
+    }
     if (scannerState?.isLoading == true) {
         ScannerGate(
             contentPadding = contentPadding,
@@ -377,7 +406,7 @@ private fun ScannerMapFace(
             theme = theme,
             configuration = configuration,
             areaGeoJson = areaGeoJson,
-            featureGeoJson = null,
+            featureGeoJson = featureGeoJson,
             areaCenter = areaCenter,
             currentLocation = lastLocation,
             bearing = bearing,
@@ -387,6 +416,25 @@ private fun ScannerMapFace(
             reloadKey = reloadKey,
             zoomRequest = zoomRequest,
             onBasemapStateChanged = onBasemapStateChanged,
+            onFeatureClick = lastLocation?.let { location ->
+                val position = MapCoordinate(location.latitude, location.longitude)
+                fun(featureId: String) {
+                    val entry = mapEntries.firstOrNull { candidate ->
+                        candidate.assignment.summary.status == AssignmentStatus.ACTIVE &&
+                            FieldGeoJson.contains(
+                                candidate.assignment.summary.area?.geoJson,
+                                position,
+                            ) == true &&
+                            candidate.mapData.features.any { feature ->
+                                feature.kind == AssignmentMapFeatureKind.BUILDING &&
+                                    feature.id == featureId
+                            }
+                    }
+                    if (entry != null) {
+                        selectedBuildingKey = entry.assignment.summary.id to featureId
+                    }
+                }
+            },
         )
         ScannerGrid(theme)
 
@@ -549,6 +597,7 @@ private fun ScannerMapFace(
         val notice = locationError
             ?: compassError
             ?: scannerState?.errorMessage
+            ?: scannerState?.buildingStatusMessage
             ?: when {
                 !isOnline -> "Kein Netz – Zielgebiet und Standort bleiben sichtbar."
                 basemapState == BasemapState.UNAVAILABLE -> "MapLibre-Karte konnte nicht geladen werden."
@@ -565,7 +614,14 @@ private fun ScannerMapFace(
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                MapNotice(it, if (locationError != null) FieldRed else FieldAmber)
+                MapNotice(
+                    it,
+                    when {
+                        locationError != null -> FieldRed
+                        scannerState?.buildingStatusMessage != null -> FieldGreen
+                        else -> FieldAmber
+                    },
+                )
                 if (basemapState == BasemapState.UNAVAILABLE && isOnline) {
                     FieldActionButton(
                         modifier = Modifier.padding(top = 8.dp),
@@ -583,6 +639,18 @@ private fun ScannerMapFace(
                 }
             }
         }
+    }
+
+    selectedBuilding?.let { (entry, building) ->
+        BuildingStatusSheet(
+            building = building,
+            changingBuildingId = scannerState?.changingBuildingId,
+            onDismiss = { selectedBuildingKey = null },
+            onChangeStatus = { status ->
+                onChangeBuildingStatus(entry.assignment.summary.id, building, status)
+                selectedBuildingKey = null
+            },
+        )
     }
 }
 
@@ -811,57 +879,73 @@ private fun AssignmentMapFace(
         }
     }
 
-    if (selectedBuilding != null) {
-        ModalBottomSheet(
-            onDismissRequest = { selectedBuildingId = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = FieldPanelColor,
-            contentColor = FieldWhite,
+    selectedBuilding?.let { building ->
+        BuildingStatusSheet(
+            building = building,
+            changingBuildingId = detailState.changingBuildingId,
+            onDismiss = { selectedBuildingId = null },
+            onChangeStatus = { status ->
+                onChangeBuildingStatus(building, status)
+                selectedBuildingId = null
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BuildingStatusSheet(
+    building: AssignmentMapFeature,
+    changingBuildingId: String?,
+    onDismiss: () -> Unit,
+    onChangeStatus: (BuildingStatus) -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = FieldPanelColor,
+        contentColor = FieldWhite,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                FieldEyebrow("Gebäude")
-                Text(
-                    text = selectedBuilding.label ?: "Gebäude #${selectedBuilding.id}",
-                    color = FieldWhite,
-                    style = MaterialTheme.typography.titleLarge,
+            FieldEyebrow("Gebäude")
+            Text(
+                text = building.label ?: "Gebäude #${building.id}",
+                color = FieldWhite,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            FieldStatusPill(
+                label = (building.status ?: BuildingStatus.OPEN).displayName,
+                tone = building.status.buildingTone(),
+            )
+            when {
+                building.isPendingSync ->
+                    MapNotice("Für dieses Gebäude ist eine Synchronisierung offen.", FieldAmber)
+                !building.canUpdate ->
+                    MapNotice("Keine Berechtigung für diese Gebäudeänderung.", FieldAmber)
+            }
+            BuildingStatus.actionStatuses.forEach { status ->
+                FieldActionButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = status.displayName,
+                    enabled = building.canUpdate &&
+                        !building.isPendingSync &&
+                        building.status != status &&
+                        changingBuildingId == null,
+                    isLoading = changingBuildingId == building.id,
+                    variant = when (status) {
+                        BuildingStatus.DONE -> FieldButtonVariant.Primary
+                        BuildingStatus.UNREACHABLE,
+                        BuildingStatus.PROBLEM,
+                        -> FieldButtonVariant.Danger
+                        else -> FieldButtonVariant.Secondary
+                    },
+                    onClick = { onChangeStatus(status) },
                 )
-                FieldStatusPill(
-                    label = (selectedBuilding.status ?: BuildingStatus.OPEN).displayName,
-                    tone = selectedBuilding.status.buildingTone(),
-                )
-                when {
-                    selectedBuilding.isPendingSync ->
-                        MapNotice("Für dieses Gebäude ist eine Synchronisierung offen.", FieldAmber)
-                    !selectedBuilding.canUpdate ->
-                        MapNotice("Keine Berechtigung für diese Gebäudeänderung.", FieldAmber)
-                }
-                BuildingStatus.actionStatuses.forEach { status ->
-                    FieldActionButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        text = status.displayName,
-                        enabled = selectedBuilding.canUpdate &&
-                            !selectedBuilding.isPendingSync &&
-                            selectedBuilding.status != status &&
-                            detailState.changingBuildingId == null,
-                        isLoading = detailState.changingBuildingId == selectedBuilding.id,
-                        variant = when (status) {
-                            BuildingStatus.DONE -> FieldButtonVariant.Primary
-                            BuildingStatus.UNREACHABLE,
-                            BuildingStatus.PROBLEM,
-                            -> FieldButtonVariant.Danger
-                            else -> FieldButtonVariant.Secondary
-                        },
-                        onClick = {
-                            onChangeBuildingStatus(selectedBuilding, status)
-                            selectedBuildingId = null
-                        },
-                    )
-                }
             }
         }
     }

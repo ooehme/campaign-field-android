@@ -182,6 +182,7 @@ fun CampaignFieldNavHost(
                 onRefreshAssignment = viewModel::refresh,
                 onOpenAssignmentDetails = {},
                 onOpenProof = {},
+                onChangeScannerBuildingStatus = viewModel::changeBuildingStatus,
                 configuration = mapConfiguration,
                 locationAccessState = locationAccessState,
                 locationSessionState = locationSessionState,

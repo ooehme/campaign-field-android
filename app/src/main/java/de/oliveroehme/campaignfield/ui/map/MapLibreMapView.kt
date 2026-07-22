@@ -267,7 +267,7 @@ fun MapLibreMapView(
 
     DisposableEffect(map, mode) {
         val readyMap = map
-        if (readyMap == null || mode != FieldMapMode.ASSIGNMENT) {
+        if (readyMap == null) {
             onDispose { }
         } else {
             val listener = MapLibreMap.OnMapClickListener { point ->
