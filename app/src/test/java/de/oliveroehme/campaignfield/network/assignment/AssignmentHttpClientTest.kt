@@ -35,7 +35,7 @@ class AssignmentHttpClientTest {
     }
 
     @Test
-    fun `loads and merges every primary page`() = runBlocking {
+    fun `loads and merges every team page`() = runBlocking {
         server.enqueue(
             jsonResponse(
                 """{"data":[{"id":1,"title":"A","status":"active"}],"current_page":1,"last_page":2,"total":2}""",
@@ -50,24 +50,31 @@ class AssignmentHttpClientTest {
         val result = client.loadAssignments(userId = "7", teamIds = listOf("3"))
 
         assertEquals(listOf("1", "2"), (result as AssignmentResult.Success).value.items.map { it.id })
-        assertEquals("/api/assignments?per_page=100&page=1", server.takeRequest().path)
-        assertEquals("/api/assignments?per_page=100&page=2", server.takeRequest().path)
+        assertEquals("/api/teams/3/assignments?per_page=100&page=1", server.takeRequest().path)
+        assertEquals("/api/teams/3/assignments?per_page=100&page=2", server.takeRequest().path)
     }
 
     @Test
-    fun `falls back from primary and user route to team routes`() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(MockResponse().setResponseCode(404))
-        server.enqueue(jsonResponse("""{"data":[{"id":3,"title":"Teamauftrag","status":"ready"}]}"""))
-        server.enqueue(jsonResponse("""{"data":[{"id":3,"title":"Doppelt","status":"ready"},{"id":4,"title":"Weiterer","status":"paused"}]}"""))
+    fun `falls back from forbidden team route to user route`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(jsonResponse("""{"data":[{"id":3,"title":"Benutzerauftrag","status":"ready"}]}"""))
 
         val result = client.loadAssignments(userId = "user/7", teamIds = listOf("north", "south"))
 
-        assertEquals(listOf("3", "4"), (result as AssignmentResult.Success).value.items.map { it.id })
-        assertEquals("/api/assignments?per_page=100&page=1", server.takeRequest().path)
-        assertEquals("/api/users/user%2F7/assignments?per_page=100&page=1", server.takeRequest().path)
+        assertEquals(listOf("3"), (result as AssignmentResult.Success).value.items.map { it.id })
         assertEquals("/api/teams/north/assignments?per_page=100&page=1", server.takeRequest().path)
-        assertEquals("/api/teams/south/assignments?per_page=100&page=1", server.takeRequest().path)
+        assertEquals("/api/users/user%2F7/assignments?per_page=100&page=1", server.takeRequest().path)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `uses user route when no team is known`() = runBlocking {
+        server.enqueue(jsonResponse("""{"data":[{"id":5,"title":"Benutzerauftrag","status":"active"}]}"""))
+
+        val result = client.loadAssignments(userId = "7", teamIds = emptyList())
+
+        assertEquals(listOf("5"), (result as AssignmentResult.Success).value.items.map { it.id })
+        assertEquals("/api/users/7/assignments?per_page=100&page=1", server.takeRequest().path)
     }
 
     @Test

@@ -33,43 +33,35 @@ class AssignmentHttpClient internal constructor(
         userId: String?,
         teamIds: List<String>,
     ): AssignmentResult<AssignmentPage> = withContext(ioDispatcher) {
-        val primary = loadAllPages(listOf("assignments"))
-        if (primary !is AssignmentResult.Failure || !primary.failure.isUnavailableRoute) {
-            return@withContext primary
+        val uniqueTeams = teamIds.filter(String::isNotBlank).distinct()
+        if (uniqueTeams.isNotEmpty()) {
+            val combined = mutableListOf<AssignmentSummary>()
+            for (teamId in uniqueTeams) {
+                when (val teamResult = loadAllPages(listOf("teams", teamId, "assignments"))) {
+                    is AssignmentResult.Success -> combined += teamResult.value.items
+                    is AssignmentResult.Failure -> {
+                        if (!userId.isNullOrBlank() && teamResult.failure.shouldUseUserFallback) {
+                            return@withContext loadAllPages(listOf("users", userId, "assignments"))
+                        }
+                        return@withContext teamResult
+                    }
+                }
+            }
+            val deduplicated = combined.distinctBy { it.id }
+            return@withContext AssignmentResult.Success(
+                AssignmentPage(
+                    items = deduplicated,
+                    perPage = deduplicated.size,
+                    total = deduplicated.size,
+                ),
+            )
         }
 
         if (!userId.isNullOrBlank()) {
-            val userFallback = loadAllPages(listOf("users", userId, "assignments"))
-            if (userFallback !is AssignmentResult.Failure || !userFallback.failure.isUnavailableRoute) {
-                return@withContext userFallback
-            }
+            return@withContext loadAllPages(listOf("users", userId, "assignments"))
         }
 
-        val uniqueTeams = teamIds.filter(String::isNotBlank).distinct()
-        if (uniqueTeams.isEmpty()) return@withContext primary
-
-        val combined = mutableListOf<AssignmentSummary>()
-        var successfulTeamResponses = 0
-        for (teamId in uniqueTeams) {
-            when (val teamResult = loadAllPages(listOf("teams", teamId, "assignments"))) {
-                is AssignmentResult.Success -> {
-                    successfulTeamResponses++
-                    combined += teamResult.value.items
-                }
-                is AssignmentResult.Failure -> if (!teamResult.failure.isUnavailableRoute) {
-                    return@withContext teamResult
-                }
-            }
-        }
-        if (successfulTeamResponses == 0) return@withContext primary
-        val deduplicated = combined.distinctBy { it.id }
-        AssignmentResult.Success(
-            AssignmentPage(
-                items = deduplicated,
-                perPage = deduplicated.size,
-                total = deduplicated.size,
-            ),
-        )
+        AssignmentResult.Success(AssignmentPage(emptyList()))
     }
 
     override suspend fun loadAssignment(id: String): AssignmentResult<AssignmentDetail> =
@@ -196,8 +188,8 @@ data class AssignmentFailure(
     val httpStatus: Int?,
     val userMessage: String,
 ) {
-    internal val isUnavailableRoute: Boolean
-        get() = httpStatus == 404 || httpStatus == 405
+    internal val shouldUseUserFallback: Boolean
+        get() = httpStatus == 403 || httpStatus == 404
 
     companion object {
         internal fun network() = AssignmentFailure(

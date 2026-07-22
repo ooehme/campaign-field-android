@@ -41,6 +41,7 @@ internal class UserProfileParser(
                 addLabels(user["roles"])
                 addLabel(user["role"])
                 addLabel(user["display_role"])
+                addLabel(user["app_role"])
             }.distinct(),
             teams = parseTeams(user),
             permissions = UserPermissions(
@@ -52,28 +53,82 @@ internal class UserProfileParser(
     }
 
     private fun parseTeams(user: JsonObject): List<TeamMembership> {
-        val entries = sequenceOf("teams", "memberships", "team_memberships")
+        val memberships = linkedMapOf<String, TeamMembership>()
+
+        fun addTeam(
+            team: JsonObject?,
+            fallbackId: String? = null,
+            roleSource: JsonObject? = team,
+            defaultRole: String? = null,
+        ) {
+            val id = team?.text("id") ?: fallbackId
+            val name = team?.text("name")
+                ?: team?.text("label")
+                ?: id?.let { "Team #$it" }
+                ?: return
+            val roles = rolesFrom(roleSource, defaultRole)
+            val key = id ?: "name:$name"
+            val existing = memberships[key]
+            memberships[key] = TeamMembership(
+                teamId = id ?: existing?.teamId,
+                teamName = when {
+                    existing == null -> name
+                    existing.teamName.startsWith("Team #") && !name.startsWith("Team #") -> name
+                    else -> existing.teamName
+                },
+                roles = (existing?.roles.orEmpty() + roles).distinct(),
+            )
+        }
+
+        addTeam(user["team"] as? JsonObject, fallbackId = user.text("team_id"))
+        addTeam(
+            (user["current_team"] as? JsonObject) ?: (user["currentTeam"] as? JsonObject),
+            fallbackId = user.text("current_team_id"),
+        )
+        (user["team_ids"] as? JsonArray)?.forEach { element ->
+            addTeam(team = null, fallbackId = element.primitiveText())
+        }
+
+        sequenceOf("teams", "all_teams", "allTeams")
             .mapNotNull { user[it] as? JsonArray }
             .flatMap(JsonArray::asSequence)
+            .mapNotNull { it as? JsonObject }
+            .forEach { addTeam(it) }
 
-        return entries.mapNotNull { element ->
-            val membership = element as? JsonObject ?: return@mapNotNull null
-            val team = membership["team"] as? JsonObject ?: membership
-            val name = team.text("name") ?: team.text("label") ?: return@mapNotNull null
-            val roles = buildList {
-                addLabels(membership["roles"])
-                addLabel(membership["role"])
-                addLabel(membership["role_name"])
-                addLabel((membership["pivot"] as? JsonObject)?.get("role"))
-                addLabel((membership["membership"] as? JsonObject)?.get("role"))
-            }.distinct()
-            TeamMembership(
-                teamId = team.text("id"),
-                teamName = name,
-                roles = roles,
-            )
-        }.distinctBy { it.teamId ?: it.teamName }.toList()
+        sequenceOf("owned_teams", "ownedTeams")
+            .mapNotNull { user[it] as? JsonArray }
+            .flatMap(JsonArray::asSequence)
+            .mapNotNull { it as? JsonObject }
+            .forEach { addTeam(it, defaultRole = "lead") }
+
+        sequenceOf("memberships", "team_memberships", "teamMemberships")
+            .mapNotNull { user[it] as? JsonArray }
+            .flatMap(JsonArray::asSequence)
+            .mapNotNull { it as? JsonObject }
+            .forEach { membership ->
+                addTeam(
+                    team = membership["team"] as? JsonObject,
+                    fallbackId = membership.text("team_id") ?: membership.text("id"),
+                    roleSource = membership,
+                )
+            }
+
+        return memberships.values.toList()
     }
+
+    private fun rolesFrom(source: JsonObject?, defaultRole: String?): List<String> = buildList {
+        addLabels(source?.get("roles"))
+        addLabel(source?.get("role_label"))
+        addLabel(source?.get("role_name"))
+        addLabel(source?.get("role"))
+        addLabel((source?.get("pivot") as? JsonObject)?.get("role_label"))
+        addLabel((source?.get("pivot") as? JsonObject)?.get("role_name"))
+        addLabel((source?.get("pivot") as? JsonObject)?.get("role"))
+        addLabel((source?.get("membership") as? JsonObject)?.get("role_label"))
+        addLabel((source?.get("membership") as? JsonObject)?.get("role_name"))
+        addLabel((source?.get("membership") as? JsonObject)?.get("role"))
+        if (isEmpty()) defaultRole?.let(::add)
+    }.distinct()
 
     private fun MutableList<String>.addLabels(element: JsonElement?) {
         when (element) {
@@ -97,6 +152,11 @@ internal class UserProfileParser(
         is JsonPrimitive -> value.contentOrNull?.trim()?.takeIf(String::isNotEmpty)
         else -> null
     }
+
+    private fun JsonElement.primitiveText(): String? = (this as? JsonPrimitive)
+        ?.contentOrNull
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
 
     private fun JsonElement?.asStrictBoolean(): Boolean {
         val primitive = this as? JsonPrimitive ?: return false

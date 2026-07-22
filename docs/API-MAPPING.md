@@ -112,6 +112,10 @@ lokale Daten und weist getrennt auf eine fehlgeschlagene serverseitige Abmeldung
 ## `can`-Berechtigungslogik
 
 Fehlende Flags gelten strikt als `false`; Rollen werden nie zur Autorisierung verwendet.
+Solange `user.can.view_assignments` nicht verlässlich in `/user` geliefert wird, blockiert
+sein Fehlen den read-only Listenrequest nicht vorzeitig. Wie die Referenz lädt die App über
+die bekannten Teamrouten und fällt bei 403/404 auf die Benutzerroute zurück; deren Antwort
+ist autoritativ. Mutationen bleiben strikt `can`-gebunden.
 
 | Container | bekannte Flags |
 |---|---|

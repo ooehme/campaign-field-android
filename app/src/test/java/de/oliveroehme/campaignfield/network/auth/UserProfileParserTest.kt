@@ -47,6 +47,33 @@ class UserProfileParserTest {
     }
 
     @Test
+    fun `reads the same team variants as the web reference`() {
+        val profile = parser.parse(
+            """
+            {
+              "id": 1,
+              "name": "A",
+              "team_id": 7,
+              "current_team_id": 8,
+              "currentTeam": {"id": 8, "label": "Aktuelles Team"},
+              "team_ids": [9, "10"],
+              "all_teams": [{"id": 7, "name": "Stammteam"}],
+              "ownedTeams": [{"id": 11, "name": "Geleitetes Team"}],
+              "teamMemberships": [
+                {"team_id": 12, "team": {"id": 12, "name": "Projektteam"}, "role_label": "Mitglied"}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val teams = profile.teams.associateBy { it.teamId }
+        assertEquals(setOf("7", "8", "9", "10", "11", "12"), teams.keys)
+        assertEquals("Stammteam", teams["7"]?.teamName)
+        assertEquals(listOf("lead"), teams["11"]?.roles)
+        assertEquals(listOf("Mitglied"), teams["12"]?.roles)
+    }
+
+    @Test
     fun `rejects payload without recognizable profile`() {
         assertTrue(runCatching { parser.parse("{\"data\":{}}") }.isFailure)
     }

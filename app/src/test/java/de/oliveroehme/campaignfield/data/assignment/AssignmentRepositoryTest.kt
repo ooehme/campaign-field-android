@@ -44,12 +44,12 @@ class AssignmentRepositoryTest {
     }
 
     @Test
-    fun `does not call backend without view permission`() = runBlocking {
+    fun `lets backend decide read access when user can flag is missing`() = runBlocking {
         val remote = FakeRemote(AssignmentPage(emptyList()))
         val result = DefaultAssignmentRepository(remote).loadAssignments(profile(canView = false))
 
-        assertTrue(result is AssignmentResult.Failure)
-        assertEquals(0, remote.calls)
+        assertTrue(result is AssignmentResult.Success)
+        assertEquals(1, remote.calls)
     }
 
     private fun profile(canView: Boolean) = UserProfile(

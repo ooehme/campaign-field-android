@@ -5,8 +5,6 @@ import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.domain.forOperativeOverview
-import de.oliveroehme.campaignfield.network.assignment.AssignmentFailure
-import de.oliveroehme.campaignfield.network.assignment.AssignmentFailureKind
 import de.oliveroehme.campaignfield.network.assignment.AssignmentRemoteDataSource
 import de.oliveroehme.campaignfield.network.assignment.AssignmentResult
 
@@ -19,15 +17,6 @@ class DefaultAssignmentRepository(
     private val remote: AssignmentRemoteDataSource,
 ) : AssignmentRepository {
     override suspend fun loadAssignments(profile: UserProfile): AssignmentResult<AssignmentPage> {
-        if (!profile.permissions.viewAssignments) {
-            return AssignmentResult.Failure(
-                AssignmentFailure(
-                    kind = AssignmentFailureKind.FORBIDDEN,
-                    httpStatus = 403,
-                    userMessage = "Keine Berechtigung, Aufträge anzuzeigen.",
-                ),
-            )
-        }
         return when (
             val result = remote.loadAssignments(
                 userId = profile.id,
