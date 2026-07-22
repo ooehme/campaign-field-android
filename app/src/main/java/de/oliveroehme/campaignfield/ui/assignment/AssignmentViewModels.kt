@@ -7,6 +7,8 @@ import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
+import de.oliveroehme.campaignfield.domain.AssignmentLocationInput
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.BuildingStatus
@@ -174,6 +176,8 @@ data class AssignmentDetailUiState(
     val canChangeStatus: Boolean = false,
     val changingBuildingId: String? = null,
     val buildingStatusMessage: String? = null,
+    val changingMapFeatureId: String? = null,
+    val mapObjectMessage: String? = null,
 )
 
 data class ScannerUiState(
@@ -336,6 +340,7 @@ class AssignmentDetailViewModel(
     private var loadJob: Job? = null
     private var statusJob: Job? = null
     private var buildingStatusJob: Job? = null
+    private var mapFeatureJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -466,6 +471,151 @@ class AssignmentDetailViewModel(
         }
     }
 
+    fun createPosterLocation(input: AssignmentLocationInput) {
+        val assignment = mutableState.value.assignment ?: return
+        runMapFeatureMutation("poster-create") {
+            when (val result = repository.createPosterLocation(assignment, input)) {
+                is AssignmentResult.Success -> applyMapFeatureResult(
+                    previousId = null,
+                    feature = result.value.feature,
+                    message = if (result.value.queued) {
+                        "Poster-Standort lokal gespeichert. Synchronisation ausstehend."
+                    } else {
+                        "Poster-Standort angelegt."
+                    },
+                )
+                is AssignmentResult.Failure -> applyMapFeatureFailure(result.failure.userMessage)
+            }
+        }
+    }
+
+    fun changeBuildingNotes(building: AssignmentMapFeature, notes: String?) {
+        val assignment = mutableState.value.assignment ?: return
+        runMapFeatureMutation(building.id) {
+            when (val result = repository.changeBuildingNotes(assignment, building, notes)) {
+                is AssignmentResult.Success -> applyMapFeatureResult(
+                    previousId = building.id,
+                    feature = result.value.feature,
+                    message = if (result.value.queued) {
+                        "GebÃ¤udenotiz lokal gespeichert. Synchronisation ausstehend."
+                    } else {
+                        "GebÃ¤udenotiz aktualisiert."
+                    },
+                )
+                is AssignmentResult.Failure -> applyMapFeatureFailure(result.failure.userMessage)
+            }
+        }
+    }
+
+    fun deleteAssignmentBuilding(building: AssignmentMapFeature) {
+        val assignment = mutableState.value.assignment ?: return
+        runMapFeatureMutation(building.id) {
+            when (val result = repository.deleteAssignmentBuilding(assignment, building)) {
+                is AssignmentResult.Success -> mutableState.update { current ->
+                    current.copy(
+                        mapData = current.mapData?.removeFeature(building.id),
+                        changingMapFeatureId = null,
+                        mapObjectMessage = "GebÃ¤ude gelÃ¶scht.",
+                    )
+                }
+                is AssignmentResult.Failure -> applyMapFeatureFailure(result.failure.userMessage)
+            }
+        }
+    }
+
+    fun updateMapFeature(feature: AssignmentMapFeature, input: AssignmentLocationInput) {
+        val assignment = mutableState.value.assignment ?: return
+        runMapFeatureMutation(feature.id) {
+            val result = when (feature.kind) {
+                AssignmentMapFeatureKind.POSTER ->
+                    repository.updatePosterLocation(assignment, feature, input)
+                AssignmentMapFeatureKind.CAMPAIGN_BOOTH ->
+                    repository.saveCampaignBoothLocation(assignment, feature, input)
+                AssignmentMapFeatureKind.BUILDING -> return@runMapFeatureMutation
+            }
+            when (result) {
+                is AssignmentResult.Success -> applyMapFeatureResult(
+                    previousId = feature.id,
+                    feature = result.value.feature,
+                    message = if (result.value.queued) {
+                        "Kartenobjekt lokal gespeichert. Synchronisation ausstehend."
+                    } else {
+                        "Kartenobjekt aktualisiert."
+                    },
+                )
+                is AssignmentResult.Failure -> applyMapFeatureFailure(result.failure.userMessage)
+            }
+        }
+    }
+
+    fun createCampaignBoothLocation(input: AssignmentLocationInput) {
+        val assignment = mutableState.value.assignment ?: return
+        runMapFeatureMutation("booth-create") {
+            when (val result = repository.saveCampaignBoothLocation(assignment, null, input)) {
+                is AssignmentResult.Success -> applyMapFeatureResult(
+                    previousId = null,
+                    feature = result.value.feature,
+                    message = if (result.value.queued) {
+                        "Aktionsstand lokal gespeichert. Synchronisation ausstehend."
+                    } else {
+                        "Aktionsstand angelegt."
+                    },
+                )
+                is AssignmentResult.Failure -> applyMapFeatureFailure(result.failure.userMessage)
+            }
+        }
+    }
+
+    fun deleteMapFeature(feature: AssignmentMapFeature) {
+        val assignment = mutableState.value.assignment ?: return
+        runMapFeatureMutation(feature.id) {
+            val result = when (feature.kind) {
+                AssignmentMapFeatureKind.POSTER -> repository.deletePosterLocation(assignment, feature)
+                AssignmentMapFeatureKind.CAMPAIGN_BOOTH ->
+                    repository.deleteCampaignBoothLocation(assignment, feature)
+                AssignmentMapFeatureKind.BUILDING -> return@runMapFeatureMutation
+            }
+            when (result) {
+                is AssignmentResult.Success -> mutableState.update { current ->
+                    current.copy(
+                        mapData = current.mapData?.removeFeature(feature.id),
+                        changingMapFeatureId = null,
+                        mapObjectMessage = "Kartenobjekt gelÃ¶scht.",
+                    )
+                }
+                is AssignmentResult.Failure -> applyMapFeatureFailure(result.failure.userMessage)
+            }
+        }
+    }
+
+    private fun runMapFeatureMutation(id: String, block: suspend () -> Unit) {
+        if (mapFeatureJob?.isActive == true) return
+        mutableState.update {
+            it.copy(changingMapFeatureId = id, errorMessage = null, mapObjectMessage = null)
+        }
+        mapFeatureJob = viewModelScope.launch { block() }
+    }
+
+    private fun applyMapFeatureResult(
+        previousId: String?,
+        feature: AssignmentMapFeature,
+        message: String,
+    ) {
+        mutableState.update { current ->
+            current.copy(
+                mapData = current.mapData?.replaceFeature(previousId, feature),
+                changingMapFeatureId = null,
+                mapObjectMessage = message,
+            )
+        }
+    }
+
+    private fun applyMapFeatureFailure(message: String) {
+        mutableState.update {
+            it.copy(changingMapFeatureId = null, errorMessage = message)
+        }
+    }
+
     companion object {
         fun factory(
             repository: AssignmentRepository,
@@ -476,6 +626,22 @@ class AssignmentDetailViewModel(
         }
     }
 }
+
+private fun AssignmentMapData.replaceFeature(
+    previousId: String?,
+    feature: AssignmentMapFeature,
+): AssignmentMapData = copy(
+    features = features.filterNot { it.id == previousId || it.id == feature.id } + feature,
+).recount()
+
+private fun AssignmentMapData.removeFeature(id: String): AssignmentMapData =
+    copy(features = features.filterNot { it.id == id }).recount()
+
+private fun AssignmentMapData.recount(): AssignmentMapData = copy(
+    buildingCount = features.count { it.kind == AssignmentMapFeatureKind.BUILDING },
+    posterCount = features.count { it.kind == AssignmentMapFeatureKind.POSTER },
+    campaignBoothCount = features.count { it.kind == AssignmentMapFeatureKind.CAMPAIGN_BOOTH },
+)
 
 private inline fun <reified T : ViewModel> factoryFor(
     crossinline create: () -> T,

@@ -23,8 +23,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +41,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentStatusAction
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
@@ -390,6 +398,9 @@ fun AssignmentDetailScreen(
     onOpenMap: () -> Unit,
     onOpenProof: () -> Unit,
     onOpenSync: () -> Unit,
+    onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit,
+    onChangeBuildingNotes: (AssignmentMapFeature, String?) -> Unit,
+    onDeleteBuilding: (AssignmentMapFeature) -> Unit,
 ) {
     when {
         state.isLoading && state.assignment == null -> AssignmentDetailLoading(contentPadding)
@@ -416,10 +427,16 @@ fun AssignmentDetailScreen(
             isMapDataLoading = state.isMapDataLoading,
             mapDataErrorMessage = state.mapDataErrorMessage,
             canChangeStatus = state.canChangeStatus,
+            changingBuildingId = state.changingBuildingId,
+            changingMapFeatureId = state.changingMapFeatureId,
+            operationalMessage = state.mapObjectMessage ?: state.buildingStatusMessage,
             onChangeStatus = onChangeStatus,
             onOpenMap = onOpenMap,
             onOpenProof = onOpenProof,
             onOpenSync = onOpenSync,
+            onChangeBuildingStatus = onChangeBuildingStatus,
+            onChangeBuildingNotes = onChangeBuildingNotes,
+            onDeleteBuilding = onDeleteBuilding,
         )
     }
 }
@@ -439,10 +456,16 @@ private fun AssignmentDetailContent(
     isMapDataLoading: Boolean,
     mapDataErrorMessage: String?,
     canChangeStatus: Boolean,
+    changingBuildingId: String?,
+    changingMapFeatureId: String?,
+    operationalMessage: String?,
     onChangeStatus: (AssignmentStatus) -> Unit,
     onOpenMap: () -> Unit,
     onOpenProof: () -> Unit,
     onOpenSync: () -> Unit,
+    onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit,
+    onChangeBuildingNotes: (AssignmentMapFeature, String?) -> Unit,
+    onDeleteBuilding: (AssignmentMapFeature) -> Unit,
 ) {
     val assignment = detail.summary
     val assignmentSyncEvents = syncState.events.filter { it.assignmentId == assignment.id }
@@ -492,6 +515,7 @@ private fun AssignmentDetailContent(
         }
         errorMessage?.let { FieldMessagePanel(message = it, tint = FieldRed) }
         statusMessage?.let { FieldMessagePanel(message = it, tint = FieldGreen) }
+        operationalMessage?.let { FieldMessagePanel(message = it, tint = FieldGreen) }
         if (hasPendingStatusChange) {
             FieldMessagePanel(
                 message = "Statusänderung lokal gespeichert – Synchronisierung steht noch aus.",
@@ -569,6 +593,17 @@ private fun AssignmentDetailContent(
             onOpenMap = onOpenMap,
         )
 
+        AssignmentOperationalObjects(
+            detail = detail,
+            data = mapData,
+            changingBuildingId = changingBuildingId,
+            changingMapFeatureId = changingMapFeatureId,
+            onChangeBuildingStatus = onChangeBuildingStatus,
+            onChangeBuildingNotes = onChangeBuildingNotes,
+            onDeleteBuilding = onDeleteBuilding,
+            onOpenMap = onOpenMap,
+        )
+
         DetailPanel(title = "Status") {
             val actions = detail.availableStatusActions()
             if (actions.isNotEmpty() && !canChangeStatus) {
@@ -613,6 +648,171 @@ private fun AssignmentDetailContent(
 }
 
 @Composable
+private fun AssignmentOperationalObjects(
+    detail: AssignmentDetail,
+    data: AssignmentMapData?,
+    changingBuildingId: String?,
+    changingMapFeatureId: String?,
+    onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit,
+    onChangeBuildingNotes: (AssignmentMapFeature, String?) -> Unit,
+    onDeleteBuilding: (AssignmentMapFeature) -> Unit,
+    onOpenMap: () -> Unit,
+) {
+    val features = data?.features.orEmpty()
+    if (features.isEmpty()) return
+    var expandedBuildingId by remember { mutableStateOf<String?>(null) }
+    var visibleCount by remember { mutableStateOf(30) }
+    DetailPanel(title = "Operative Objekte") {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            features.take(visibleCount).forEach { feature ->
+                var noteValue by remember(feature.id, feature.note) {
+                    mutableStateOf(feature.note.orEmpty())
+                }
+                var confirmDelete by remember(feature.id) { mutableStateOf(false) }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(FieldShape)
+                        .background(FieldBlackOverlay.copy(alpha = 0.20f))
+                        .border(1.dp, FieldBorder, FieldShape)
+                        .clickable {
+                            if (feature.kind == AssignmentMapFeatureKind.BUILDING) {
+                                expandedBuildingId = feature.id.takeUnless { it == expandedBuildingId }
+                            } else {
+                                onOpenMap()
+                            }
+                        }
+                        .padding(12.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                feature.label ?: when (feature.kind) {
+                                    AssignmentMapFeatureKind.BUILDING -> "GebÃ¤ude #${feature.id}"
+                                    AssignmentMapFeatureKind.POSTER -> "Poster #${feature.id}"
+                                    AssignmentMapFeatureKind.CAMPAIGN_BOOTH -> "Aktionsstand"
+                                },
+                                color = FieldWhite,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            feature.note?.takeIf(String::isNotBlank)?.let { note ->
+                                Text(
+                                    modifier = Modifier.padding(top = 3.dp),
+                                    text = note,
+                                    color = FieldMuted,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                        FieldStatusPill(
+                            label = feature.status?.displayName
+                                ?: feature.resourceStatus?.takeIf(String::isNotBlank)
+                                ?: if (feature.isPendingSync) "Offen" else "Erfasst",
+                            tone = if (feature.isPendingSync) FieldStatusTone.Warning else FieldStatusTone.Neutral,
+                        )
+                    }
+                    if (feature.kind == AssignmentMapFeatureKind.BUILDING &&
+                        expandedBuildingId == feature.id
+                    ) {
+                        if (detail.summary.status != AssignmentStatus.ACTIVE) {
+                            Text(
+                                modifier = Modifier.padding(top = 10.dp),
+                                text = "Keine Bearbeitung: Der Auftrag ist nicht aktiv.",
+                                color = FieldMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else if (!feature.canUpdate && !feature.canDelete) {
+                            Text(
+                                modifier = Modifier.padding(top = 10.dp),
+                                text = "Keine Bearbeitung: can.update und can.delete fehlen.",
+                                color = FieldMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier.padding(top = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                if (feature.canUpdate) {
+                                    BuildingStatus.actionStatuses.forEach { status ->
+                                        FieldActionButton(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            text = status.displayName,
+                                            enabled = !feature.isPendingSync &&
+                                                changingBuildingId != feature.id &&
+                                                changingMapFeatureId != feature.id,
+                                            isLoading = changingBuildingId == feature.id,
+                                            variant = FieldButtonVariant.Secondary,
+                                            onClick = {
+                                                onChangeBuildingStatus(feature, status)
+                                                expandedBuildingId = null
+                                            },
+                                        )
+                                    }
+                                    OutlinedTextField(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        value = noteValue,
+                                        onValueChange = { noteValue = it.take(2_000) },
+                                        label = { Text("Notiz") },
+                                        minLines = 2,
+                                        enabled = !feature.isPendingSync &&
+                                            changingMapFeatureId != feature.id,
+                                    )
+                                    FieldActionButton(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        text = "Notiz speichern",
+                                        enabled = !feature.isPendingSync &&
+                                            changingMapFeatureId != feature.id,
+                                        isLoading = changingMapFeatureId == feature.id,
+                                        variant = FieldButtonVariant.Secondary,
+                                        onClick = {
+                                            onChangeBuildingNotes(
+                                                feature,
+                                                noteValue.trim().takeIf(String::isNotEmpty),
+                                            )
+                                            expandedBuildingId = null
+                                        },
+                                    )
+                                }
+                                if (feature.canDelete) {
+                                    FieldActionButton(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        text = if (confirmDelete) "LÃ¶schen bestÃ¤tigen" else "GebÃ¤ude lÃ¶schen",
+                                        enabled = !feature.isPendingSync &&
+                                            changingMapFeatureId != feature.id,
+                                        isLoading = changingMapFeatureId == feature.id,
+                                        variant = FieldButtonVariant.Danger,
+                                        onClick = {
+                                            if (confirmDelete) {
+                                                onDeleteBuilding(feature)
+                                                expandedBuildingId = null
+                                            } else {
+                                                confirmDelete = true
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (visibleCount < features.size) {
+                FieldActionButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = "Weitere ${minOf(30, features.size - visibleCount)} anzeigen",
+                    variant = FieldButtonVariant.Secondary,
+                    onClick = { visibleCount += 30 },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun AssignmentOperationalSummary(
     type: AssignmentType,
     data: AssignmentMapData?,
@@ -626,6 +826,11 @@ private fun AssignmentOperationalSummary(
         AssignmentType.POSTER_FREE,
         AssignmentType.POSTER_GUIDED,
         -> Triple("Poster", data?.posterCount ?: 0, "Posterstandorte auf der Karte bearbeiten.")
+        AssignmentType.CAMPAIGN_BOOTH -> Triple(
+            "Aktionsstand",
+            data?.campaignBoothCount ?: 0,
+            "Aktionsstandort auf der Karte anzeigen und bearbeiten.",
+        )
         else -> return
     }
     Column(

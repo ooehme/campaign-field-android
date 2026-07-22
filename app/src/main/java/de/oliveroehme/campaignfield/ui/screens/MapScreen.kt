@@ -26,6 +26,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -51,6 +52,8 @@ import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
+import de.oliveroehme.campaignfield.domain.AssignmentLocationInput
+import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.toGeoJson
 import de.oliveroehme.campaignfield.location.CompassSource
@@ -101,6 +104,10 @@ fun MapScreen(
     onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit = { _, _ -> },
     onChangeScannerBuildingStatus: (String, AssignmentMapFeature, BuildingStatus) -> Unit =
         { _, _, _ -> },
+    onCreatePosterLocation: (AssignmentLocationInput) -> Unit = {},
+    onCreateCampaignBoothLocation: (AssignmentLocationInput) -> Unit = {},
+    onUpdateMapFeature: (AssignmentMapFeature, AssignmentLocationInput) -> Unit = { _, _ -> },
+    onDeleteMapFeature: (AssignmentMapFeature) -> Unit = {},
     configuration: MapConfiguration,
     locationAccessState: LocationAccessState,
     locationSessionState: InMemoryLocationSessionState,
@@ -126,6 +133,9 @@ fun MapScreen(
     var zoomRequest by remember { mutableStateOf<MapZoomRequest?>(null) }
     var zoomRequestId by remember { mutableIntStateOf(0) }
     var showActions by remember { mutableStateOf(false) }
+    var captureKind by remember { mutableStateOf<LocationCaptureKind?>(null) }
+    var pendingCapture by remember { mutableStateOf<PendingLocationCapture?>(null) }
+    var captureError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(isScanner, locationAccessState.isPermissionGranted, locationAccessState.isLocationEnabled) {
         if (!isScanner || !locationAccessState.isPermissionGranted || !locationAccessState.isLocationEnabled) {
@@ -282,6 +292,25 @@ fun MapScreen(
         },
         onShowActions = { showActions = true },
         onChangeBuildingStatus = onChangeBuildingStatus,
+        onMapClick = { coordinate ->
+            val kind = captureKind ?: return@AssignmentMapFace
+            val inside = FieldGeoJson.contains(area?.geoJson, coordinate)
+            if (inside == false) {
+                captureError = "Der gewÃ¤hlte Punkt liegt auÃŸerhalb des Zielgebiets."
+            } else {
+                pendingCapture = PendingLocationCapture(kind, coordinate)
+                captureKind = null
+                captureError = null
+            }
+        },
+        captureKind = captureKind,
+        captureError = captureError,
+        onCancelCapture = {
+            captureKind = null
+            captureError = null
+        },
+        onUpdateMapFeature = onUpdateMapFeature,
+        onDeleteMapFeature = onDeleteMapFeature,
     )
 
     if (showActions) {
@@ -308,6 +337,49 @@ fun MapScreen(
                         onOpenAssignmentDetails()
                     },
                 )
+                val canCreatePoster = detail?.summary?.type == AssignmentType.POSTER_FREE &&
+                    detail.summary.status == AssignmentStatus.ACTIVE &&
+                    detail.permissions.managePosterLocations
+                val hasBooth = assignmentState.mapData?.features?.any {
+                    it.kind == AssignmentMapFeatureKind.CAMPAIGN_BOOTH
+                } == true
+                val canCreateBooth = detail?.summary?.type == AssignmentType.CAMPAIGN_BOOTH &&
+                    detail.summary.status == AssignmentStatus.ACTIVE &&
+                    detail.permissions.manageCampaignBoothLocation && !hasBooth
+                if (canCreatePoster || canCreateBooth) {
+                    val kind = if (canCreatePoster) LocationCaptureKind.POSTER else LocationCaptureKind.BOOTH
+                    FieldActionButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        text = if (canCreatePoster) "Poster am GPS-Standort" else "Aktionsstand am GPS-Standort",
+                        icon = FieldIcons.MapPin,
+                        enabled = lastLocation != null,
+                        variant = FieldButtonVariant.Secondary,
+                        onClick = {
+                            lastLocation?.let { location ->
+                                val coordinate = MapCoordinate(location.latitude, location.longitude)
+                                val inside = FieldGeoJson.contains(area?.geoJson, coordinate)
+                                if (inside == false) {
+                                    captureError = "Der aktuelle Standort liegt auÃŸerhalb des Zielgebiets."
+                                } else {
+                                    pendingCapture = PendingLocationCapture(kind, coordinate)
+                                    captureError = null
+                                }
+                            }
+                            showActions = false
+                        },
+                    )
+                    FieldActionButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        text = if (canCreatePoster) "Poster auf Karte setzen" else "Aktionsstand auf Karte setzen",
+                        icon = FieldIcons.MapPinned,
+                        variant = FieldButtonVariant.Secondary,
+                        onClick = {
+                            captureKind = kind
+                            captureError = null
+                            showActions = false
+                        },
+                    )
+                }
                 FieldActionButton(
                     modifier = Modifier.fillMaxWidth(),
                     text = "Nachweis",
@@ -321,6 +393,21 @@ fun MapScreen(
                 )
             }
         }
+    }
+
+    pendingCapture?.let { capture ->
+        LocationCreateConfirmationSheet(
+            capture = capture,
+            isSaving = assignmentState?.changingMapFeatureId != null,
+            onDismiss = { pendingCapture = null },
+            onConfirm = { input ->
+                when (capture.kind) {
+                    LocationCaptureKind.POSTER -> onCreatePosterLocation(input)
+                    LocationCaptureKind.BOOTH -> onCreateCampaignBoothLocation(input)
+                }
+                pendingCapture = null
+            },
+        )
     }
 }
 
@@ -680,6 +767,12 @@ private fun AssignmentMapFace(
     onToggleLive: () -> Unit,
     onShowActions: () -> Unit,
     onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit,
+    onMapClick: (MapCoordinate) -> Unit,
+    captureKind: LocationCaptureKind?,
+    captureError: String?,
+    onCancelCapture: () -> Unit,
+    onUpdateMapFeature: (AssignmentMapFeature, AssignmentLocationInput) -> Unit,
+    onDeleteMapFeature: (AssignmentMapFeature) -> Unit,
 ) {
     val detail = requireNotNull(detailState.assignment)
     val assignment = detail.summary
@@ -690,10 +783,8 @@ private fun AssignmentMapFace(
         }
     }
     val featureGeoJson = remember(detailState.mapData) { detailState.mapData?.toGeoJson() }
-    var selectedBuildingId by remember { mutableStateOf<String?>(null) }
-    val selectedBuilding = detailState.mapData?.features?.firstOrNull { feature ->
-        feature.kind == AssignmentMapFeatureKind.BUILDING && feature.id == selectedBuildingId
-    }
+    var selectedFeatureId by remember { mutableStateOf<String?>(null) }
+    val selectedFeature = detailState.mapData?.features?.firstOrNull { it.id == selectedFeatureId }
 
     Column(
         modifier = Modifier
@@ -744,6 +835,18 @@ private fun AssignmentMapFace(
         }
         detailState.errorMessage?.let { MapNotice(it, FieldRed) }
         detailState.buildingStatusMessage?.let { MapNotice(it, FieldGreen) }
+        detailState.mapObjectMessage?.let { MapNotice(it, FieldGreen) }
+        captureError?.let { MapNotice(it, FieldRed) }
+        if (captureKind != null) {
+            MapNotice(
+                if (captureKind == LocationCaptureKind.POSTER) {
+                    "Tippe auf die Karte, um den Poster-Standort zu setzen."
+                } else {
+                    "Tippe auf die Karte, um den Aktionsstand zu setzen."
+                },
+                FieldCyan,
+            )
+        }
         if (assignment.status != AssignmentStatus.ACTIVE && detailState.mapData?.buildingCount != 0) {
             MapNotice("Gebäudestatus kann geändert werden, sobald der Auftrag aktiv ist.", FieldMuted)
         }
@@ -777,9 +880,8 @@ private fun AssignmentMapFace(
                 reloadKey = reloadKey,
                 zoomRequest = zoomRequest,
                 onBasemapStateChanged = onBasemapStateChanged,
-                onFeatureClick = if (assignment.status == AssignmentStatus.ACTIVE) {
-                    { featureId -> selectedBuildingId = featureId }
-                } else null,
+                onFeatureClick = { featureId -> selectedFeatureId = featureId },
+                onMapClick = if (captureKind != null) onMapClick else null,
             )
             Column(
                 modifier = Modifier
@@ -860,6 +962,15 @@ private fun AssignmentMapFace(
             )
         }
 
+        if (captureKind != null) {
+            FieldActionButton(
+                modifier = Modifier.fillMaxWidth(),
+                text = "Kartenauswahl abbrechen",
+                variant = FieldButtonVariant.Danger,
+                onClick = onCancelCapture,
+            )
+        }
+
         val statusMessage = locationError ?: compassError
         when {
             statusMessage != null -> MapNotice(statusMessage, FieldAmber)
@@ -879,14 +990,31 @@ private fun AssignmentMapFace(
         }
     }
 
-    selectedBuilding?.let { building ->
+    selectedFeature?.takeIf { it.kind == AssignmentMapFeatureKind.BUILDING }?.let { building ->
         BuildingStatusSheet(
             building = building,
             changingBuildingId = detailState.changingBuildingId,
-            onDismiss = { selectedBuildingId = null },
+            onDismiss = { selectedFeatureId = null },
             onChangeStatus = { status ->
                 onChangeBuildingStatus(building, status)
-                selectedBuildingId = null
+                selectedFeatureId = null
+            },
+        )
+    }
+    selectedFeature?.takeIf { it.kind != AssignmentMapFeatureKind.BUILDING }?.let { feature ->
+        MapFeatureEditSheet(
+            feature = feature,
+            isSaving = detailState.changingMapFeatureId == feature.id,
+            canEdit = assignment.status == AssignmentStatus.ACTIVE && feature.canUpdate &&
+                !feature.isPendingSync,
+            onDismiss = { selectedFeatureId = null },
+            onSave = { input ->
+                onUpdateMapFeature(feature, input)
+                selectedFeatureId = null
+            },
+            onDelete = {
+                onDeleteMapFeature(feature)
+                selectedFeatureId = null
             },
         )
     }
@@ -1136,4 +1264,182 @@ private fun BuildingStatus?.buildingTone(): FieldStatusTone = when (this) {
 }
 
 private const val MAX_USABLE_ACCURACY_METERS = 500f
+private enum class LocationCaptureKind { POSTER, BOOTH }
+
+private data class PendingLocationCapture(
+    val kind: LocationCaptureKind,
+    val coordinate: MapCoordinate,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LocationCreateConfirmationSheet(
+    capture: PendingLocationCapture,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (AssignmentLocationInput) -> Unit,
+) {
+    var label by remember(capture) { mutableStateOf("") }
+    var note by remember(capture) { mutableStateOf("") }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = FieldPanelColor,
+        contentColor = FieldWhite,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                if (capture.kind == LocationCaptureKind.POSTER) {
+                    "Poster-Standort bestÃ¤tigen"
+                } else {
+                    "Aktionsstand bestÃ¤tigen"
+                },
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                String.format(
+                    java.util.Locale.GERMANY,
+                    "Position: %.6f, %.6f",
+                    capture.coordinate.latitude,
+                    capture.coordinate.longitude,
+                ),
+                color = FieldMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = label,
+                onValueChange = { label = it.take(120) },
+                label = { Text("Bezeichnung (optional)") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = note,
+                onValueChange = { note = it.take(1_000) },
+                label = { Text("Notiz (optional)") },
+                minLines = 2,
+            )
+            FieldActionButton(
+                modifier = Modifier.fillMaxWidth(),
+                text = "Verbindlich speichern",
+                icon = FieldIcons.CheckCircle,
+                isLoading = isSaving,
+                enabled = !isSaving,
+                onClick = {
+                    onConfirm(
+                        AssignmentLocationInput(
+                            latitude = capture.coordinate.latitude,
+                            longitude = capture.coordinate.longitude,
+                            label = label.trim().takeIf(String::isNotEmpty),
+                            note = note.trim().takeIf(String::isNotEmpty),
+                        ),
+                    )
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MapFeatureEditSheet(
+    feature: AssignmentMapFeature,
+    isSaving: Boolean,
+    canEdit: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (AssignmentLocationInput) -> Unit,
+    onDelete: () -> Unit,
+) {
+    val coordinate = remember(feature.geometryGeoJson) {
+        FieldGeoJson.positions(feature.geometryGeoJson).firstOrNull()
+    }
+    var label by remember(feature.id) { mutableStateOf(feature.label.orEmpty()) }
+    var note by remember(feature.id) { mutableStateOf(feature.note.orEmpty()) }
+    var status by remember(feature.id) { mutableStateOf(feature.resourceStatus.orEmpty()) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = FieldPanelColor,
+        contentColor = FieldWhite,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                if (feature.kind == AssignmentMapFeatureKind.POSTER) "Poster-Standort" else "Aktionsstand",
+                style = MaterialTheme.typography.titleLarge,
+            )
+            if (!canEdit) {
+                Text(
+                    if (feature.isPendingSync) {
+                        "Eine lokale Ã„nderung wartet auf Synchronisation."
+                    } else {
+                        "Keine Berechtigung zum Bearbeiten oder Auftrag nicht aktiv."
+                    },
+                    color = FieldMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = label,
+                onValueChange = { label = it.take(120) },
+                label = { Text("Bezeichnung") },
+                enabled = canEdit && !isSaving,
+                singleLine = true,
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = status,
+                onValueChange = { status = it.take(80) },
+                label = { Text("Status") },
+                enabled = canEdit && !isSaving,
+                singleLine = true,
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = note,
+                onValueChange = { note = it.take(1_000) },
+                label = { Text("Notiz") },
+                enabled = canEdit && !isSaving,
+                minLines = 2,
+            )
+            FieldActionButton(
+                modifier = Modifier.fillMaxWidth(),
+                text = "Speichern",
+                icon = FieldIcons.CheckCircle,
+                isLoading = isSaving,
+                enabled = canEdit && coordinate != null && !isSaving,
+                onClick = {
+                    coordinate?.let {
+                        onSave(
+                            AssignmentLocationInput(
+                                latitude = it.latitude,
+                                longitude = it.longitude,
+                                label = label.trim().takeIf(String::isNotEmpty),
+                                note = note.trim().takeIf(String::isNotEmpty),
+                                status = status.trim().takeIf(String::isNotEmpty),
+                            ),
+                        )
+                    }
+                },
+            )
+            if (feature.canDelete) {
+                FieldActionButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = "LÃ¶schen",
+                    variant = FieldButtonVariant.Danger,
+                    enabled = canEdit && !isSaving,
+                    onClick = onDelete,
+                )
+            }
+        }
+    }
+}
+
 private const val NETWORK_REFRESH_INTERVAL_MS = 2_000L

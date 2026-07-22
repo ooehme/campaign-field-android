@@ -117,6 +117,9 @@ fun CampaignFieldNavHost(
                 onOpenSync = {
                     navController.navigate(AppDestination.Sync.route) { launchSingleTop = true }
                 },
+                onChangeBuildingStatus = viewModel::changeBuildingStatus,
+                onChangeBuildingNotes = viewModel::changeBuildingNotes,
+                onDeleteBuilding = viewModel::deleteAssignmentBuilding,
             )
         }
         composable(
@@ -151,6 +154,10 @@ fun CampaignFieldNavHost(
                     }
                 },
                 onChangeBuildingStatus = viewModel::changeBuildingStatus,
+                onCreatePosterLocation = viewModel::createPosterLocation,
+                onCreateCampaignBoothLocation = viewModel::createCampaignBoothLocation,
+                onUpdateMapFeature = viewModel::updateMapFeature,
+                onDeleteMapFeature = viewModel::deleteMapFeature,
                 configuration = mapConfiguration,
                 locationAccessState = locationAccessState,
                 locationSessionState = locationSessionState,

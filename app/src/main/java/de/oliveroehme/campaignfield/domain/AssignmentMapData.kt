@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import kotlinx.serialization.Serializable
 
@@ -14,6 +15,7 @@ import kotlinx.serialization.Serializable
 data class AssignmentMapData(
     val buildingCount: Int = 0,
     val posterCount: Int = 0,
+    val campaignBoothCount: Int = 0,
     val features: List<AssignmentMapFeature> = emptyList(),
 )
 
@@ -23,8 +25,11 @@ data class AssignmentMapFeature(
     val kind: AssignmentMapFeatureKind,
     val geometryGeoJson: String,
     val status: BuildingStatus? = null,
+    val resourceStatus: String? = null,
     val canUpdate: Boolean = false,
+    val canDelete: Boolean = false,
     val label: String? = null,
+    val note: String? = null,
     val isPendingSync: Boolean = false,
 )
 
@@ -32,6 +37,26 @@ data class AssignmentMapFeature(
 enum class AssignmentMapFeatureKind {
     BUILDING,
     POSTER,
+    CAMPAIGN_BOOTH,
+}
+
+@Serializable
+data class AssignmentLocationInput(
+    val latitude: Double,
+    val longitude: Double,
+    val label: String? = null,
+    val note: String? = null,
+    val status: String? = null,
+) {
+    init {
+        require(latitude in -90.0..90.0)
+        require(longitude in -180.0..180.0)
+    }
+
+    fun pointGeoJson(): String = buildJsonObject {
+        put("type", "Point")
+        put("coordinates", buildJsonArray { add(longitude); add(latitude) })
+    }.toString()
 }
 
 @Serializable
@@ -87,6 +112,15 @@ fun AssignmentMapData.toGeoJson(): String {
                                                 put("fillOpacity", 0.9)
                                                 put("extrusionHeight", 0.0)
                                                 put("radius", 5.0)
+                                                put("pendingSync", feature.isPendingSync)
+                                            }
+                                            AssignmentMapFeatureKind.CAMPAIGN_BOOTH -> {
+                                                put("kind", "booth")
+                                                put("color", "#38FF9C")
+                                                put("fillOpacity", 0.95)
+                                                put("extrusionHeight", 0.0)
+                                                put("radius", 7.0)
+                                                put("pendingSync", feature.isPendingSync)
                                             }
                                         }
                                     },

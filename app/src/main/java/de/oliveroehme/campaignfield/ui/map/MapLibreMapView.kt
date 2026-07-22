@@ -124,6 +124,7 @@ fun MapLibreMapView(
     zoomRequest: MapZoomRequest?,
     onBasemapStateChanged: (BasemapState) -> Unit,
     onFeatureClick: ((String) -> Unit)? = null,
+    onMapClick: ((MapCoordinate) -> Unit)? = null,
 ) {
     val mapView = rememberManagedMapView(isOnline, reloadKey, mode)
     var map by remember(mapView) { mutableStateOf<MapLibreMap?>(null) }
@@ -131,6 +132,7 @@ fun MapLibreMapView(
     var fallbackInstalled by remember(mapView) { mutableStateOf(false) }
     var cameraInitialized by remember(mapView) { mutableStateOf(false) }
     val currentOnFeatureClick by rememberUpdatedState(onFeatureClick)
+    val currentOnMapClick by rememberUpdatedState(onMapClick)
 
     DisposableEffect(mapView, map) {
         val failureListener = MapView.OnDidFailLoadingMapListener {
@@ -271,24 +273,24 @@ fun MapLibreMapView(
             onDispose { }
         } else {
             val listener = MapLibreMap.OnMapClickListener { point ->
-                val callback = currentOnFeatureClick ?: return@OnMapClickListener false
                 val feature = readyMap.queryRenderedFeatures(
                     readyMap.projection.toScreenLocation(point),
                     FEATURE_BUILDING_LAYER_ID,
                     FEATURE_BUILDING_OUTLINE_LAYER_ID,
                     FEATURE_GEOMETRY_POINT_LAYER_ID,
                     FEATURE_MARKER_LAYER_ID,
-                ).firstOrNull { rendered ->
-                    rendered.hasProperty("kind") && rendered.getStringProperty("kind") == "building"
-                }
+                ).firstOrNull { rendered -> rendered.hasProperty("featureId") }
                 val featureId = feature
                     ?.takeIf { it.hasProperty("featureId") }
                     ?.getStringProperty("featureId")
-                if (featureId.isNullOrBlank()) {
-                    false
-                } else {
-                    callback(featureId)
+                if (!featureId.isNullOrBlank() && currentOnFeatureClick != null) {
+                    currentOnFeatureClick?.invoke(featureId)
                     true
+                } else if (currentOnMapClick != null) {
+                    currentOnMapClick?.invoke(MapCoordinate(point.latitude, point.longitude))
+                    true
+                } else {
+                    false
                 }
             }
             readyMap.addOnMapClickListener(listener)

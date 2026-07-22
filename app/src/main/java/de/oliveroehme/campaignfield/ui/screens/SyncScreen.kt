@@ -153,9 +153,19 @@ private fun SyncEventCard(
                 SyncEventKind.ASSIGNMENT_STATUS_UPDATE ->
                     "Status: ${event.previousStatus.displayName} → ${event.targetStatus.displayName}"
                 SyncEventKind.ASSIGNMENT_BUILDING_UPDATE ->
-                    "Gebäude #${event.buildingId}: " +
-                        "${event.previousBuildingStatus?.displayName} → " +
-                        event.targetBuildingStatus?.displayName
+                    if (event.payloadJson != null) {
+                        "Gebäudedaten #${event.subjectId} warten auf Synchronisation."
+                    } else {
+                        "Gebäude #${event.buildingId}: " +
+                            "${event.previousBuildingStatus?.displayName} → " +
+                            event.targetBuildingStatus?.displayName
+                    }
+                SyncEventKind.POSTER_LOCATION_CREATE ->
+                    "Neuer Poster-Standort wartet auf Synchronisation."
+                SyncEventKind.POSTER_LOCATION_UPDATE ->
+                    "Poster #${event.subjectId} wartet auf Synchronisation."
+                SyncEventKind.CAMPAIGN_BOOTH_LOCATION_UPDATE ->
+                    "Aktionsstandort wartet auf Synchronisation."
             },
             color = FieldWhite,
             style = MaterialTheme.typography.bodyMedium,

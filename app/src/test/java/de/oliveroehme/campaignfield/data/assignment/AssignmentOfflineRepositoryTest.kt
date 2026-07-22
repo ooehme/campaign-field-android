@@ -6,6 +6,7 @@ import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
+import de.oliveroehme.campaignfield.domain.AssignmentLocationInput
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentPermissions
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
@@ -35,6 +36,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -111,6 +114,62 @@ class AssignmentOfflineRepositoryTest {
         assertEquals(SyncEventKind.ASSIGNMENT_BUILDING_UPDATE, store.queue.value.single().kind)
         assertEquals("building-1", store.queue.value.single().buildingId)
         assertEquals(1, scheduler.calls)
+    }
+
+    @Test
+    fun `stores free poster create as pending overlay while offline`() = runBlocking {
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(), 1L)
+        }
+        val scheduler = RecordingScheduler()
+        val repository = DefaultAssignmentRepository(
+            remote = FakeRemote(),
+            offlineStore = store,
+            syncScheduler = scheduler,
+            networkStateProvider = NetworkStateProvider { false },
+        )
+        val assignment = detail(AssignmentStatus.ACTIVE).copy(
+            summary = summary(AssignmentStatus.ACTIVE).copy(type = AssignmentType.POSTER_FREE),
+            permissions = AssignmentPermissions(managePosterLocations = true),
+        )
+
+        val result = repository.createPosterLocation(
+            assignment,
+            AssignmentLocationInput(50.8, 12.9, label = "Mast"),
+        ) as AssignmentResult.Success
+
+        assertTrue(result.value.queued)
+        assertTrue(result.value.feature.isPendingSync)
+        assertEquals(SyncEventKind.POSTER_LOCATION_CREATE, store.queue.value.single().kind)
+        assertEquals(1, store.mapData?.value?.posterCount)
+        assertEquals(1, scheduler.calls)
+    }
+
+    @Test
+    fun `sync replaces local poster with authoritative server feature`() = runBlocking {
+        val local = AssignmentMapFeature(
+            id = "local-poster",
+            kind = AssignmentMapFeatureKind.POSTER,
+            geometryGeoJson = """{"type":"Point","coordinates":[12.9,50.8]}""",
+            label = "Mast",
+            isPendingSync = true,
+        )
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(posterCount = 1, features = listOf(local)), 1L)
+            enqueueAssignmentMapFeatureMutation(
+                "assignment-1",
+                SyncEventKind.POSTER_LOCATION_CREATE,
+                local,
+            )
+        }
+        val remote = FakeRemote()
+
+        val outcome = AssignmentSyncEngine(remote, store).processPending()
+
+        assertEquals(SyncProcessOutcome.COMPLETE, outcome)
+        assertEquals(50.8, remote.createdPosterInput?.latitude)
+        assertEquals("poster-server", store.mapData?.value?.features?.single()?.id)
+        assertEquals(SyncQueueStatus.SYNCED, store.queue.value.single().status)
     }
 
     @Test
@@ -349,6 +408,7 @@ class AssignmentOfflineRepositoryTest {
         var updatedBuildingId: String? = null
         var updatedBuildingStatus: BuildingStatus? = null
         var updatedBuildingClientEventKey: String? = null
+        var createdPosterInput: AssignmentLocationInput? = null
         override suspend fun loadAssignments(
             userId: String?,
             teamIds: List<String>,
@@ -381,6 +441,23 @@ class AssignmentOfflineRepositoryTest {
             updatedBuildingClientEventKey = clientEventKey
             return AssignmentResult.Success(Unit)
         }
+
+        override suspend fun createPosterLocation(
+            assignmentId: String,
+            input: AssignmentLocationInput,
+        ): AssignmentResult<AssignmentMapFeature> {
+            createdPosterInput = input
+            return AssignmentResult.Success(
+                AssignmentMapFeature(
+                    id = "poster-server",
+                    kind = AssignmentMapFeatureKind.POSTER,
+                    geometryGeoJson = input.pointGeoJson(),
+                    label = input.label,
+                    canUpdate = true,
+                ),
+            )
+        }
+
     }
 
     private class FakeOfflineStore : OfflineStore {
@@ -426,6 +503,39 @@ class AssignmentOfflineRepositoryTest {
             )
         }
 
+        override suspend fun mergeAssignmentMapFeature(
+            assignmentId: String,
+            previousFeatureId: String?,
+            feature: AssignmentMapFeature,
+        ) {
+            val current = mapData?.value ?: AssignmentMapData()
+            val features = current.features.filterNot {
+                it.id == previousFeatureId || it.id == feature.id
+            } + feature
+            mapData = CachedValue(
+                current.copy(
+                    features = features,
+                    buildingCount = features.count { it.kind == AssignmentMapFeatureKind.BUILDING },
+                    posterCount = features.count { it.kind == AssignmentMapFeatureKind.POSTER },
+                    campaignBoothCount = features.count {
+                        it.kind == AssignmentMapFeatureKind.CAMPAIGN_BOOTH
+                    },
+                ),
+                1L,
+            )
+        }
+
+        override suspend fun removeAssignmentMapFeature(
+            assignmentId: String,
+            featureId: String,
+        ) {
+            mapData = mapData?.copy(
+                value = mapData!!.value.copy(
+                    features = mapData!!.value.features.filterNot { it.id == featureId },
+                ),
+            )
+        }
+
         override suspend fun enqueueAssignmentStatusUpdate(
             assignmentId: String,
             previousStatus: AssignmentStatus,
@@ -462,6 +572,29 @@ class AssignmentOfflineRepositoryTest {
                 buildingId = buildingId,
                 targetBuildingStatus = targetStatus,
                 previousBuildingStatus = previousStatus,
+                status = SyncQueueStatus.PENDING,
+                attempts = 0,
+                createdAtEpochMillis = 1L,
+                updatedAtEpochMillis = 1L,
+            )
+            queue.value += event
+            return event
+        }
+
+        override suspend fun enqueueAssignmentMapFeatureMutation(
+            assignmentId: String,
+            kind: SyncEventKind,
+            feature: AssignmentMapFeature,
+            previousFeature: AssignmentMapFeature?,
+        ): SyncQueueItem {
+            val event = SyncQueueItem(
+                id = "event-${queue.value.size + 1}",
+                assignmentId = assignmentId,
+                kind = kind,
+                targetStatus = AssignmentStatus.UNKNOWN,
+                previousStatus = AssignmentStatus.UNKNOWN,
+                subjectId = feature.id,
+                payloadJson = Json.encodeToString(feature),
                 status = SyncQueueStatus.PENDING,
                 attempts = 0,
                 createdAtEpochMillis = 1L,

@@ -3,6 +3,7 @@ package de.oliveroehme.campaignfield.network.assignment
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.domain.BuildingStatus
+import de.oliveroehme.campaignfield.domain.AssignmentLocationInput
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import de.oliveroehme.campaignfield.network.auth.PersistentCookieJar
 import de.oliveroehme.campaignfield.network.auth.SanctumHttpClient
@@ -160,6 +161,38 @@ class AssignmentHttpClientTest {
         assertEquals(2, data.features.size)
         assertEquals("/api/assignments/8/buildings?per_page=100&page=1", server.takeRequest().path)
         assertEquals("/api/assignments/8/buildings?per_page=100&page=2", server.takeRequest().path)
+    }
+
+    @Test
+    fun `creates poster location with reference payload`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"data":{"id":21,"label":"Mast","latitude":50.8,"longitude":12.9,"can":{"update":true}}}""",
+            ),
+        )
+
+        val result = client.createPosterLocation(
+            "8",
+            AssignmentLocationInput(50.8, 12.9, label = "Mast", note = "Nordseite"),
+        )
+
+        assertEquals("21", (result as AssignmentResult.Success).value.id)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/assignments/8/poster-locations", request.path)
+        assertTrue(request.body.readUtf8().contains("\"latitude\":50.8"))
+    }
+
+    @Test
+    fun `treats missing campaign booth as empty map data`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(404))
+
+        val result = client.loadAssignmentMapData("8", AssignmentType.CAMPAIGN_BOOTH)
+
+        val data = (result as AssignmentResult.Success).value
+        assertEquals(0, data.campaignBoothCount)
+        assertTrue(data.features.isEmpty())
+        assertEquals("/api/assignments/8/campaign-booth-location", server.takeRequest().path)
     }
 
     @Test

@@ -2,6 +2,8 @@ package de.oliveroehme.campaignfield.database
 
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
@@ -42,6 +44,12 @@ interface OfflineStore {
         buildingId: String,
         status: BuildingStatus,
     )
+    suspend fun mergeAssignmentMapFeature(
+        assignmentId: String,
+        previousFeatureId: String?,
+        feature: AssignmentMapFeature,
+    )
+    suspend fun removeAssignmentMapFeature(assignmentId: String, featureId: String)
 
     suspend fun enqueueAssignmentStatusUpdate(
         assignmentId: String,
@@ -54,6 +62,13 @@ interface OfflineStore {
         buildingId: String,
         previousStatus: BuildingStatus,
         targetStatus: BuildingStatus,
+    ): SyncQueueItem
+
+    suspend fun enqueueAssignmentMapFeatureMutation(
+        assignmentId: String,
+        kind: SyncEventKind,
+        feature: AssignmentMapFeature,
+        previousFeature: AssignmentMapFeature? = null,
     ): SyncQueueItem
 
     suspend fun readPendingQueue(): List<SyncQueueItem>
@@ -162,6 +177,32 @@ class RoomOfflineStore(
         )
     }
 
+    override suspend fun mergeAssignmentMapFeature(
+        assignmentId: String,
+        previousFeatureId: String?,
+        feature: AssignmentMapFeature,
+    ) {
+        val existing = dao.readAssignment(assignmentId) ?: return
+        val mapData = decodeMapData(existing, emptyList())?.value ?: AssignmentMapData()
+        val replaceIds = setOfNotNull(previousFeatureId, feature.id)
+        val next = mapData.copy(
+            features = mapData.features.filterNot { it.id in replaceIds } + feature,
+        ).withRecountedFeatures()
+        dao.storeAssignment(
+            existing.copy(mapDataJson = json.encodeToString(next), cachedAtEpochMillis = clock()),
+        )
+    }
+
+    override suspend fun removeAssignmentMapFeature(assignmentId: String, featureId: String) {
+        val existing = dao.readAssignment(assignmentId) ?: return
+        val mapData = decodeMapData(existing, emptyList())?.value ?: return
+        val next = mapData.copy(features = mapData.features.filterNot { it.id == featureId })
+            .withRecountedFeatures()
+        dao.storeAssignment(
+            existing.copy(mapDataJson = json.encodeToString(next), cachedAtEpochMillis = clock()),
+        )
+    }
+
     override suspend fun enqueueAssignmentStatusUpdate(
         assignmentId: String,
         previousStatus: AssignmentStatus,
@@ -209,6 +250,40 @@ class RoomOfflineStore(
             syncedAtEpochMillis = null,
             failureKind = null,
             lastError = null,
+        )
+        dao.insertQueueEvent(entity)
+        return requireNotNull(decodeQueueItem(entity))
+    }
+
+    override suspend fun enqueueAssignmentMapFeatureMutation(
+        assignmentId: String,
+        kind: SyncEventKind,
+        feature: AssignmentMapFeature,
+        previousFeature: AssignmentMapFeature?,
+    ): SyncQueueItem {
+        require(
+            kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE ||
+                kind == SyncEventKind.POSTER_LOCATION_CREATE ||
+                kind == SyncEventKind.POSTER_LOCATION_UPDATE ||
+                kind == SyncEventKind.CAMPAIGN_BOOTH_LOCATION_UPDATE,
+        )
+        val now = clock()
+        val entity = SyncQueueEntity(
+            id = UUID.randomUUID().toString(),
+            assignmentId = assignmentId,
+            subjectId = feature.id,
+            kind = kind.name,
+            targetStatus = feature.resourceStatus.orEmpty(),
+            previousStatus = previousFeature?.resourceStatus.orEmpty(),
+            status = SyncQueueStatus.PENDING.name,
+            attempts = 0,
+            createdAtEpochMillis = now,
+            updatedAtEpochMillis = now,
+            lastAttemptAtEpochMillis = null,
+            syncedAtEpochMillis = null,
+            failureKind = null,
+            lastError = null,
+            payloadJson = json.encodeToString(feature),
         )
         dao.insertQueueEvent(entity)
         return requireNotNull(decodeQueueItem(entity))
@@ -321,13 +396,37 @@ class RoomOfflineStore(
             }
             ?: return null
         val overlays = pendingBuildingStatusOverlays(entity.assignmentId, queue)
-        val effectiveValue = if (overlays.isEmpty()) value else value.copy(
+        var effectiveValue = if (overlays.isEmpty()) value else value.copy(
             features = value.features.map { feature ->
                 overlays[feature.id]?.let { status ->
                     feature.copy(status = status, isPendingSync = true)
                 } ?: feature
             },
         )
+        queue.asSequence()
+            .filter { it.assignmentId == entity.assignmentId }
+            .filter { queued ->
+                queued.status == SyncQueueStatus.PENDING.name ||
+                    queued.status == SyncQueueStatus.SYNCING.name
+            }
+            .filter { queued ->
+                queued.kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE.name ||
+                    queued.kind == SyncEventKind.POSTER_LOCATION_CREATE.name ||
+                    queued.kind == SyncEventKind.POSTER_LOCATION_UPDATE.name ||
+                    queued.kind == SyncEventKind.CAMPAIGN_BOOTH_LOCATION_UPDATE.name
+            }
+            .sortedBy(SyncQueueEntity::createdAtEpochMillis)
+            .mapNotNull { queued ->
+                queued.payloadJson?.let { encoded ->
+                    runCatching { json.decodeFromString<AssignmentMapFeature>(encoded) }.getOrNull()
+                }
+            }
+            .forEach { pendingFeature ->
+                effectiveValue = effectiveValue.copy(
+                    features = effectiveValue.features.filterNot { it.id == pendingFeature.id } +
+                        pendingFeature.copy(isPendingSync = true),
+                ).withRecountedFeatures()
+            }
         return CachedValue(effectiveValue, entity.cachedAtEpochMillis)
     }
 
@@ -375,6 +474,8 @@ class RoomOfflineStore(
                 AssignmentStatus.fromApi(entity.previousStatus)
             } else AssignmentStatus.UNKNOWN,
             buildingId = entity.subjectId,
+            subjectId = entity.subjectId,
+            payloadJson = entity.payloadJson,
             targetBuildingStatus = if (kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE) {
                 BuildingStatus.fromApi(entity.targetStatus)
             } else null,
@@ -391,6 +492,14 @@ class RoomOfflineStore(
             lastError = entity.lastError,
         )
     }.getOrNull()
+
+    private fun AssignmentMapData.withRecountedFeatures(): AssignmentMapData = copy(
+        buildingCount = features.count { it.kind == AssignmentMapFeatureKind.BUILDING },
+        posterCount = features.count { it.kind == AssignmentMapFeatureKind.POSTER },
+        campaignBoothCount = features.count {
+            it.kind == AssignmentMapFeatureKind.CAMPAIGN_BOOTH
+        },
+    )
 
     private companion object {
         const val SYNCING_TIMEOUT_MS = 5 * 60_000L

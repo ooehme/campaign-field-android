@@ -10,6 +10,9 @@ enum class SyncQueueStatus(val displayName: String) {
 enum class SyncEventKind(val displayName: String) {
     ASSIGNMENT_STATUS_UPDATE("Assignment-Status"),
     ASSIGNMENT_BUILDING_UPDATE("Gebäude-Status"),
+    POSTER_LOCATION_CREATE("Poster anlegen"),
+    POSTER_LOCATION_UPDATE("Poster bearbeiten"),
+    CAMPAIGN_BOOTH_LOCATION_UPDATE("Aktionsstand bearbeiten"),
 }
 
 enum class SyncFailureKind {
@@ -28,6 +31,8 @@ data class SyncQueueItem(
     val targetStatus: AssignmentStatus,
     val previousStatus: AssignmentStatus,
     val buildingId: String? = null,
+    val subjectId: String? = null,
+    val payloadJson: String? = null,
     val targetBuildingStatus: BuildingStatus? = null,
     val previousBuildingStatus: BuildingStatus? = null,
     val status: SyncQueueStatus,

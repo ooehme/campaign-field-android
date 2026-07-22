@@ -63,6 +63,7 @@ data class SyncQueueEntity(
     val syncedAtEpochMillis: Long?,
     val failureKind: String?,
     val lastError: String?,
+    val payloadJson: String? = null,
 )
 
 @Dao
@@ -229,7 +230,7 @@ abstract class OfflineDao {
         AssignmentListEntryEntity::class,
         SyncQueueEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class CampaignFieldDatabase : RoomDatabase() {
@@ -242,7 +243,7 @@ abstract class CampaignFieldDatabase : RoomDatabase() {
             context.applicationContext,
             CampaignFieldDatabase::class.java,
             DATABASE_NAME,
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -253,6 +254,12 @@ abstract class CampaignFieldDatabase : RoomDatabase() {
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `sync_queue` ADD COLUMN `subjectId` TEXT")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sync_queue` ADD COLUMN `payloadJson` TEXT")
             }
         }
     }

@@ -65,4 +65,32 @@ class AssignmentMapDataParserTest {
         assertEquals(BuildingStatus.BLOCKED, page.features.single().status)
         assertTrue(page.features.single().canUpdate)
     }
+
+    @Test
+    fun `normalizes building address notes and delete permission`() {
+        val page = parser.parseBuildings(
+            """{"data":[{"id":17,"notes":"Bitte klingeln","can":{"delete":true},"area_building":{"address":{"street":"Markt","housenumber":"4","postcode":"06108","city":"Halle"},"geometry":{"type":"Point","coordinates":[12,50]}}}]}""",
+        )
+
+        val building = page.features.single()
+        assertEquals("Markt 4, 06108 Halle", building.label)
+        assertEquals("Bitte klingeln", building.note)
+        assertTrue(building.canDelete)
+    }
+
+    @Test
+    fun `parses poster and campaign booth permissions`() {
+        val poster = parser.parsePoster(
+            """{"data":{"id":9,"label":"Laterne","status":"planned","note":"Nordseite","latitude":50.8,"longitude":12.9,"can":{"update":true,"delete":true}}}""",
+        )
+        val booth = parser.parseCampaignBooth(
+            """{"id":10,"label":"Infostand","geometry":{"type":"Point","coordinates":[12.8,50.7]},"can":{"update":true}}""",
+        )
+
+        assertEquals("planned", poster.resourceStatus)
+        assertEquals("Nordseite", poster.note)
+        assertTrue(poster.canDelete)
+        assertEquals(AssignmentMapFeatureKind.CAMPAIGN_BOOTH, booth.kind)
+        assertTrue(booth.canUpdate)
+    }
 }

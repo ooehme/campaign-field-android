@@ -3,10 +3,12 @@ package de.oliveroehme.campaignfield.network.assignment
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentType
+import de.oliveroehme.campaignfield.domain.AssignmentLocationInput
 import de.oliveroehme.campaignfield.domain.AreaSummary
 import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.TeamSummary
@@ -53,6 +55,47 @@ interface AssignmentRemoteDataSource {
     ): AssignmentResult<Unit> = AssignmentResult.Failure(
         AssignmentFailure.unsupportedMutation(),
     )
+
+    suspend fun updateAssignmentBuilding(
+        id: String,
+        status: BuildingStatus? = null,
+        notes: String? = null,
+        includeNotes: Boolean = false,
+        clientEventKey: String? = null,
+    ): AssignmentResult<Unit> = AssignmentResult.Failure(
+        AssignmentFailure.unsupportedMutation(),
+    )
+
+    suspend fun deleteAssignmentBuilding(id: String): AssignmentResult<Unit> =
+        AssignmentResult.Failure(AssignmentFailure.unsupportedMutation())
+
+    suspend fun createPosterLocation(
+        assignmentId: String,
+        input: AssignmentLocationInput,
+    ): AssignmentResult<AssignmentMapFeature> = AssignmentResult.Failure(
+        AssignmentFailure.unsupportedMutation(),
+    )
+
+    suspend fun updatePosterLocation(
+        id: String,
+        input: AssignmentLocationInput,
+    ): AssignmentResult<AssignmentMapFeature> = AssignmentResult.Failure(
+        AssignmentFailure.unsupportedMutation(),
+    )
+
+    suspend fun deletePosterLocation(id: String): AssignmentResult<Unit> =
+        AssignmentResult.Failure(AssignmentFailure.unsupportedMutation())
+
+    suspend fun saveCampaignBoothLocation(
+        assignmentId: String,
+        existingId: String?,
+        input: AssignmentLocationInput,
+    ): AssignmentResult<AssignmentMapFeature> = AssignmentResult.Failure(
+        AssignmentFailure.unsupportedMutation(),
+    )
+
+    suspend fun deleteCampaignBoothLocation(id: String): AssignmentResult<Unit> =
+        AssignmentResult.Failure(AssignmentFailure.unsupportedMutation())
 }
 
 class AssignmentHttpClient internal constructor(
@@ -148,11 +191,34 @@ class AssignmentHttpClient internal constructor(
         } else {
             FeatureCollectionResult.EMPTY
         }
+        val campaignBooth = if (type == AssignmentType.CAMPAIGN_BOOTH) {
+            when (val response = execute(configuration.apiEndpointSegments("assignments", id, "campaign-booth-location"))) {
+                is RawResponse.Success -> runCatching { mapDataParser.parseCampaignBooth(response.body) }
+                    .fold(
+                        onSuccess = { listOf(it) },
+                        onFailure = {
+                            return@withContext AssignmentResult.Failure(AssignmentFailure.invalidResponse())
+                        },
+                    )
+                is RawResponse.HttpFailure -> if (response.status == 404) {
+                    emptyList()
+                } else {
+                    return@withContext AssignmentResult.Failure(
+                        AssignmentFailure.fromHttp(response.status, detailRequest = true),
+                    )
+                }
+                RawResponse.TransportFailure ->
+                    return@withContext AssignmentResult.Failure(AssignmentFailure.network())
+            }
+        } else {
+            emptyList()
+        }
         AssignmentResult.Success(
             AssignmentMapData(
                 buildingCount = buildings.total,
                 posterCount = posters.total,
-                features = buildings.features + posters.features,
+                campaignBoothCount = campaignBooth.size,
+                features = buildings.features + posters.features + campaignBooth,
             ),
         )
     }
@@ -231,9 +297,22 @@ class AssignmentHttpClient internal constructor(
         id: String,
         status: BuildingStatus,
         clientEventKey: String?,
+    ): AssignmentResult<Unit> = updateAssignmentBuilding(
+        id = id,
+        status = status,
+        clientEventKey = clientEventKey,
+    )
+
+    override suspend fun updateAssignmentBuilding(
+        id: String,
+        status: BuildingStatus?,
+        notes: String?,
+        includeNotes: Boolean,
+        clientEventKey: String?,
     ): AssignmentResult<Unit> = withContext(ioDispatcher) {
         val payload = buildJsonObject {
-            put("status", status.apiValue)
+            status?.let { put("status", it.apiValue) }
+            if (includeNotes) put("notes", notes)
             clientEventKey?.let { put("client_event_key", it) }
         }.toString()
         val body = payload.toRequestBody(JSON_MEDIA_TYPE)
@@ -253,6 +332,118 @@ class AssignmentHttpClient internal constructor(
             RawResponse.TransportFailure -> AssignmentResult.Failure(AssignmentFailure.network())
         }
     }
+
+    override suspend fun deleteAssignmentBuilding(id: String): AssignmentResult<Unit> =
+        deleteLocation(configuration.apiEndpointSegments("assignment-buildings", id))
+
+    override suspend fun createPosterLocation(
+        assignmentId: String,
+        input: AssignmentLocationInput,
+    ): AssignmentResult<AssignmentMapFeature> = mutateLocation(
+        request = Request.Builder()
+            .url(configuration.apiEndpointSegments("assignments", assignmentId, "poster-locations"))
+            .post(input.toRequestBody())
+            .build(),
+        parse = mapDataParser::parsePoster,
+    )
+
+    override suspend fun updatePosterLocation(
+        id: String,
+        input: AssignmentLocationInput,
+    ): AssignmentResult<AssignmentMapFeature> = mutateLocation(
+        request = Request.Builder()
+            .url(configuration.apiEndpointSegments("poster-locations", id))
+            .patch(input.toRequestBody())
+            .build(),
+        parse = mapDataParser::parsePoster,
+        emptyResponseFallback = AssignmentMapFeature(
+            id = id,
+            kind = AssignmentMapFeatureKind.POSTER,
+            geometryGeoJson = input.pointGeoJson(),
+            resourceStatus = input.status,
+            label = input.label,
+            note = input.note,
+        ),
+    )
+
+    override suspend fun deletePosterLocation(id: String): AssignmentResult<Unit> =
+        deleteLocation(configuration.apiEndpointSegments("poster-locations", id))
+
+    override suspend fun saveCampaignBoothLocation(
+        assignmentId: String,
+        existingId: String?,
+        input: AssignmentLocationInput,
+    ): AssignmentResult<AssignmentMapFeature> {
+        val requestBuilder = Request.Builder().url(
+            if (existingId == null) {
+                configuration.apiEndpointSegments("assignments", assignmentId, "campaign-booth-location")
+            } else {
+                configuration.apiEndpointSegments("campaign-booth-locations", existingId)
+            },
+        )
+        val request = if (existingId == null) {
+            requestBuilder.post(input.toRequestBody()).build()
+        } else {
+            requestBuilder.patch(input.toRequestBody()).build()
+        }
+        return mutateLocation(
+            request = request,
+            parse = mapDataParser::parseCampaignBooth,
+            emptyResponseFallback = existingId?.let {
+                AssignmentMapFeature(
+                    id = it,
+                    kind = AssignmentMapFeatureKind.CAMPAIGN_BOOTH,
+                    geometryGeoJson = input.pointGeoJson(),
+                    resourceStatus = input.status,
+                    label = input.label,
+                    note = input.note,
+                )
+            },
+        )
+    }
+
+    override suspend fun deleteCampaignBoothLocation(id: String): AssignmentResult<Unit> =
+        deleteLocation(configuration.apiEndpointSegments("campaign-booth-locations", id))
+
+    private suspend fun mutateLocation(
+        request: Request,
+        parse: (String) -> AssignmentMapFeature,
+        emptyResponseFallback: AssignmentMapFeature? = null,
+    ): AssignmentResult<AssignmentMapFeature> = withContext(ioDispatcher) {
+        when (val response = execute(request)) {
+            is RawResponse.Success -> if (response.body.isBlank() && emptyResponseFallback != null) {
+                AssignmentResult.Success(emptyResponseFallback)
+            } else {
+                runCatching { parse(response.body) }.fold(
+                    onSuccess = { AssignmentResult.Success(it) },
+                    onFailure = { AssignmentResult.Failure(AssignmentFailure.invalidResponse()) },
+                )
+            }
+            is RawResponse.HttpFailure -> AssignmentResult.Failure(
+                AssignmentFailure.fromHttp(response.status, detailRequest = true, mutationRequest = true),
+            )
+            RawResponse.TransportFailure -> AssignmentResult.Failure(AssignmentFailure.network())
+        }
+    }
+
+    private suspend fun deleteLocation(url: HttpUrl): AssignmentResult<Unit> = withContext(ioDispatcher) {
+        val request = Request.Builder().url(url).delete().build()
+        when (val response = execute(request)) {
+            is RawResponse.Success -> AssignmentResult.Success(Unit)
+            is RawResponse.HttpFailure -> AssignmentResult.Failure(
+                AssignmentFailure.fromHttp(response.status, detailRequest = true, mutationRequest = true),
+            )
+            RawResponse.TransportFailure -> AssignmentResult.Failure(AssignmentFailure.network())
+        }
+    }
+
+    private fun AssignmentLocationInput.toRequestBody() = buildJsonObject {
+        put("latitude", latitude)
+        put("longitude", longitude)
+        label?.let { put("label", it) }
+        note?.let { put("note", it) }
+        status?.let { put("status", it) }
+    }.toString().toRequestBody(JSON_MEDIA_TYPE)
 
     private fun loadAllPages(pathSegments: List<String>): AssignmentResult<AssignmentPage> {
         val items = mutableListOf<AssignmentSummary>()

@@ -36,6 +36,27 @@ internal class AssignmentMapDataParser(
         nestedKeys = listOf("poster_locations", "posters"),
     )
 
+    fun parsePoster(payload: String): AssignmentMapFeature = parseSingle(
+        payload,
+        AssignmentMapFeatureKind.POSTER,
+    )
+
+    fun parseCampaignBooth(payload: String): AssignmentMapFeature = parseSingle(
+        payload,
+        AssignmentMapFeatureKind.CAMPAIGN_BOOTH,
+    )
+
+    private fun parseSingle(
+        payload: String,
+        kind: AssignmentMapFeatureKind,
+    ): AssignmentMapFeature {
+        val parsed = json.parseToJsonElement(payload) as? JsonObject
+            ?: throw IllegalArgumentException("Kartenobjekt fehlt.")
+        val item = (parsed["data"] as? JsonObject) ?: parsed
+        return parseFeature(item, kind)
+            ?: throw IllegalArgumentException("Kartenobjekt ist unvollstÃ¤ndig.")
+    }
+
     private fun parsePage(
         payload: String,
         kind: AssignmentMapFeatureKind,
@@ -76,12 +97,15 @@ internal class AssignmentMapDataParser(
             AssignmentMapFeatureKind.BUILDING -> (item["area_building"] as? JsonObject)
                 ?: (item["building"] as? JsonObject)
             AssignmentMapFeatureKind.POSTER -> item["poster"] as? JsonObject
+            AssignmentMapFeatureKind.CAMPAIGN_BOOTH ->
+                (item["campaign_booth_location"] as? JsonObject)
         }
         val id = item.firstText(
             "id",
             "assignment_building_id",
             "area_building_id",
             "poster_location_id",
+            "campaign_booth_location_id",
         )
             ?: nested?.text("id")
             ?: return null
@@ -91,17 +115,37 @@ internal class AssignmentMapDataParser(
             BuildingStatus.fromApi(item.text("status")).takeUnless { it == BuildingStatus.UNKNOWN }
                 ?: BuildingStatus.OPEN
         } else null
-        val canUpdate = kind == AssignmentMapFeatureKind.BUILDING &&
-            ((item["can"] as? JsonObject)?.boolean("update") == true)
-        val label = item.text("label") ?: nested?.text("label")
+        val can = item["can"] as? JsonObject
+        val canUpdate = can?.boolean("update") == true
+        val label = item.text("label") ?: nested?.text("label") ?: addressLabel(nested)
         return AssignmentMapFeature(
             id = id,
             kind = kind,
             geometryGeoJson = geometry,
             status = status,
+            resourceStatus = if (kind == AssignmentMapFeatureKind.BUILDING) null else item.text("status"),
             canUpdate = canUpdate,
+            canDelete = can?.boolean("delete") == true,
             label = label,
+            note = item.text("notes") ?: item.text("note"),
         )
+    }
+
+    private fun addressLabel(source: JsonObject?): String? {
+        source ?: return null
+        val address = source["address"] as? JsonObject
+        val street = source.text("street") ?: address?.text("street")
+        val number = source.text("house_number")
+            ?: address?.text("house_number")
+            ?: address?.text("housenumber")
+        val postcode = source.text("postal_code")
+            ?: address?.text("postal_code")
+            ?: address?.text("postcode")
+        val city = source.text("city") ?: address?.text("city")
+        return listOfNotNull(
+            listOfNotNull(street, number).joinToString(" ").takeIf(String::isNotBlank),
+            listOfNotNull(postcode, city).joinToString(" ").takeIf(String::isNotBlank),
+        ).joinToString(", ").takeIf(String::isNotBlank)
     }
 
     private fun geometry(source: JsonObject?): String? = source?.let { value ->

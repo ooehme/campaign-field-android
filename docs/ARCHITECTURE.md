@@ -68,9 +68,9 @@ ein lokal gespeichertes Profil nur zur kurzen UI-Hydration verwendet; erst ein e
 
 ## Offline und Sync
 
-Im aktuellen Ausbaustand speichert Room Assignment-Snapshots/-Details und typisierte
-Assignment-Status-Events. Zielgebiete, Gebäude, Poster-/Aktionsstandorte und
-Nachweismetadaten werden mit den zugehörigen Fachphasen ergänzt. Queue-Zustände:
+Im aktuellen Ausbaustand speichert Room Assignment-Snapshots/-Details samt Zielgebieten,
+Gebäuden, Poster-/Aktionsstandorten und typisierten Mutations-Events. Nachweismetadaten
+folgen mit Phase 8. Queue-Zustände:
 `pending`, `syncing`, `synced`, `failed`; Payloads werden nicht als beliebige Requests,
 sondern als fachlich typisierte Felder persistiert.
 

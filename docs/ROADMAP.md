@@ -1,7 +1,7 @@
 # Roadmap
 
-Status: Phasen 1 bis 5 abgeschlossen; der Assignment-Teil von Phase 7 ist vorgezogen
-umgesetzt. Operative Objekte beginnen mit Phase 6.
+Status: Phasen 1 bis 6 abgeschlossen; Cache und Queue aus Phase 7 sind für Assignments,
+Gebäude, Poster- und Aktionsstandorte vorgezogen umgesetzt.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -178,8 +178,8 @@ Frequenz-, Zustimmungs- und Berechtigungsvertrag.
 
 ## 6. Assignment Buildings und Poster-Standorte
 
-**Teilstatus:** Read-only Pagination, Objektzahlen und Geometrien für die Detail- und
-Auftragskarte sind umgesetzt. Statusaktionen, Listenbearbeitung und Offline-Overlays folgen.
+**Status:** Abgeschlossen am 22.07.2026; Pagination, Objektlisten/-layer, Gebäudestatus
+und -notizen, freie und geführte Poster sowie Aktionsstandorte sind umgesetzt.
 
 **Ziel:** Operative Objekte listen, auf der Karte darstellen und berechtigt bearbeiten.
 
@@ -206,6 +206,14 @@ große Gebäudemengen; Karten-Tap außerhalb Zielgebiet.
 **Offene Backend-Fragen:** finales Gebäudestatusset; `notes`-Feld; Bulk-Scope; Koordinaten-
 vs.-GeoJSON-Pflicht; erlaubte Poster-/Booth-Status; serverseitige Gebietskontrolle.
 
+**Ergebnis/Restpunkte:** Alle Seiten werden dedupliziert geladen; `notes` und der Legacy-Alias
+`note` werden normalisiert. `can.update`, `can.delete`, `manage_poster_locations` und
+`manage_campaign_booth_location` schützen die jeweils zugehörigen Aktionen. Freie Poster
+und Aktionsstände können nach Bestätigung per GPS oder Karten-Tap angelegt werden;
+ausstehende Creates/Updates bleiben als Room-Overlay sichtbar. Löschen bleibt bewusst
+online-only, bis ein verbindlicher Tombstone-/Konfliktvertrag existiert. Bulk-Aktionen und
+die serverseitige Gebietsprüfung bleiben Backend-Restpunkte.
+
 ## 7. Room-Cache und Offline-Sync-Queue
 
 **Teilstatus:** Assignment-Snapshots/-Details, Statusmutationen und die Sync-Oberfläche
@@ -213,8 +221,9 @@ sind am 22.07.2026 umgesetzt. Room überlebt Prozessneustarts; WorkManager nutzt
 Netzwerk-Constraint, exponentielles Backoff und Einzelinstanz. Queue-Zustände, Versuche,
 Fehler, manuelles Retry, Fünf-Minuten-Recovery für verwaistes `syncing` und 24-Stunden-
 Retention für `synced` sind sichtbar. Serverzustand wird vor `synced` lokal gespeichert;
-Logout/401 leeren Cache und Queue. Gebäude, Areas, Poster-/Aktionsstandorte und deren
-Queue-Arten folgen mit den Phasen 5–6.
+Logout/401 leeren Cache und Queue. Gebäude, Areas, Poster-/Aktionsstandorte sowie deren
+Pending-Overlays und Queue-Arten sind umgesetzt. Offen bleiben der verbindliche
+Idempotenz-/Konfliktvertrag und gezielte Room-Migrationstests.
 
 **Ziel:** Lesen und Arbeiten bei instabilem Netz mit nachvollziehbarer, idempotenter Queue.
 
@@ -325,5 +334,5 @@ Staging für automatisierte Tests; Release-Health-Endpunkt und Wartungsmodus.
 
 ## Empfohlener nächster Schritt
 
-Phase 6: Assignment Buildings und Poster-Standorte auf Basis der bestehenden Karte und
-der in der Referenz dokumentierten Ressourcenverträge implementieren.
+Phase 7 abschließen: Idempotenz-/Konfliktvertrag verbindlich klären, Migrationstests
+ergänzen und die verbleibenden Queue-Randfälle gegen einen realen Backend-Stand prüfen.
