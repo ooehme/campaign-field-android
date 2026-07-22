@@ -325,17 +325,18 @@ private fun rememberManagedMapView(
 
 private fun configureInteractions(map: MapLibreMap, mode: FieldMapMode, mapView: MapView) {
     val controls = map.uiSettings
-    controls.isAttributionEnabled = true
-    controls.isLogoEnabled = true
-    controls.setAttributionMargins(dp(mapView, 92), dp(mapView, 4), dp(mapView, 4), dp(mapView, 78))
-    controls.setLogoMargins(dp(mapView, 4), dp(mapView, 4), dp(mapView, 4), dp(mapView, 78))
     if (mode == FieldMapMode.SCANNER) {
+        controls.isAttributionEnabled = false
+        controls.isLogoEnabled = false
+        controls.isCompassEnabled = false
         controls.setAllGesturesEnabled(false)
-        controls.isCompassEnabled = true
-        controls.setCompassMargins(dp(mapView, 4), dp(mapView, 68), dp(mapView, 12), dp(mapView, 4))
         map.setMinZoomPreference(LIVE_MIN_ZOOM)
         map.setMaxZoomPreference(LIVE_MAX_ZOOM)
     } else {
+        controls.isAttributionEnabled = true
+        controls.isLogoEnabled = true
+        controls.setAttributionMargins(dp(mapView, 92), dp(mapView, 4), dp(mapView, 4), dp(mapView, 78))
+        controls.setLogoMargins(dp(mapView, 4), dp(mapView, 4), dp(mapView, 4), dp(mapView, 78))
         controls.setAllGesturesEnabled(true)
         controls.isRotateGesturesEnabled = false
         controls.isTiltGesturesEnabled = false
@@ -460,7 +461,7 @@ private fun ensureFeatureLayers(style: Style) {
                     fillExtrusionBase(0f),
                     fillExtrusionColor(Expression.get("color")),
                     fillExtrusionHeight(Expression.get("extrusionHeight")),
-                    fillExtrusionOpacity(0.72f),
+                    fillExtrusionOpacity(1f),
                     fillExtrusionVerticalGradient(true),
                 ),
         )
@@ -566,7 +567,9 @@ private fun applyFieldBasemapStyle(style: Style, theme: ScannerMapTheme) {
                     fillColor(colors.water), fillOutlineColor(colors.waterLine),
                 )
                 key.includesAny("building") -> layer.setProperties(
-                    fillColor(colors.building), fillOutlineColor(colors.buildingOutline),
+                    fillColor(colors.building),
+                    fillOpacity(1f),
+                    fillOutlineColor(colors.buildingOutline),
                 )
                 key.includesAny("park", "grass", "wood", "forest", "nature") ->
                     layer.setProperties(fillColor(colors.park))
@@ -576,7 +579,7 @@ private fun applyFieldBasemapStyle(style: Style, theme: ScannerMapTheme) {
             }
             is FillExtrusionLayer -> layer.setProperties(
                 fillExtrusionColor(colors.buildingExtrusion),
-                fillExtrusionOpacity(0.68f),
+                fillExtrusionOpacity(1f),
                 fillExtrusionVerticalGradient(true),
             )
             is LineLayer -> when {
@@ -636,6 +639,13 @@ private fun syncBaseBuildingExtrusions(
         layer.id.contains("building", ignoreCase = true) ||
             layer.sourceLayer.contains("building", ignoreCase = true)
     } ?: return
+    val overlayAnchor = baseBuildingOverlayAnchor(style, buildingLayer)
+    style.removeLayer(buildingLayer)
+    if (overlayAnchor != null) {
+        style.addLayerBelow(buildingLayer, overlayAnchor.id)
+    } else {
+        style.addLayer(buildingLayer)
+    }
     val extrusion = FillExtrusionLayer(BASE_BUILDING_EXTRUSION_LAYER_ID, buildingLayer.sourceId)
     if (buildingLayer.sourceLayer.isNotBlank()) {
         extrusion.withSourceLayer(buildingLayer.sourceLayer)
@@ -661,9 +671,12 @@ private fun syncBaseBuildingExtrusions(
             fillExtrusionVerticalGradient(true),
     )
     extrusion.setMinZoom(15f)
-    val firstSymbol = style.layers.firstOrNull { it is SymbolLayer }
     try {
-        if (firstSymbol != null) style.addLayerBelow(extrusion, firstSymbol.id) else style.addLayer(extrusion)
+        if (overlayAnchor != null) {
+            style.addLayerBelow(extrusion, overlayAnchor.id)
+        } else {
+            style.addLayer(extrusion)
+        }
     } catch (exception: CannotAddLayerException) {
         val duplicateWasAdded = style.getLayer(BASE_BUILDING_EXTRUSION_LAYER_ID) != null ||
             exception.message.orEmpty().contains(
@@ -674,10 +687,30 @@ private fun syncBaseBuildingExtrusions(
     }
 }
 
+private fun baseBuildingOverlayAnchor(style: Style, buildingLayer: FillLayer): SymbolLayer? {
+    val layers = style.layers
+    val buildingIndex = layers.indexOf(buildingLayer)
+    val lastTransportGeometryIndex = layers.indexOfLast { layer ->
+        layer !is SymbolLayer && layer.id.lowercase().includesAny(
+            "aeroway",
+            "bridge",
+            "highway",
+            "path",
+            "railway",
+            "road",
+            "street",
+            "transportation",
+            "tunnel",
+        )
+    }
+    val firstOverlayIndex = max(buildingIndex, lastTransportGeometryIndex) + 1
+    return layers.drop(firstOverlayIndex).filterIsInstance<SymbolLayer>().firstOrNull()
+}
+
 private fun FillExtrusionLayer.applyBuildingExtrusionTheme(theme: ScannerMapTheme) {
     setProperties(
         fillExtrusionColor(theme.colors.buildingExtrusion),
-        fillExtrusionOpacity(0.68f),
+        fillExtrusionOpacity(1f),
         fillExtrusionVerticalGradient(true),
     )
 }
