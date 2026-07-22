@@ -52,6 +52,29 @@ class AssignmentRepositoryTest {
         assertEquals(1, remote.calls)
     }
 
+    @Test
+    fun `keeps only assignments from current user teams and resolves team label`() = runBlocking {
+        val remote = FakeRemote(
+            AssignmentPage(
+                listOf(
+                    assignment("own", AssignmentStatus.READY).copy(
+                        team = TeamSummary("team-1", "Team #team-1"),
+                    ),
+                    assignment("foreign", AssignmentStatus.READY).copy(
+                        team = TeamSummary("team-2", "Fremd"),
+                    ),
+                    assignment("missing", AssignmentStatus.READY).copy(team = null),
+                ),
+            ),
+        )
+
+        val result = DefaultAssignmentRepository(remote)
+            .loadAssignments(profile(canView = true)) as AssignmentResult.Success
+
+        assertEquals(listOf("own"), result.value.items.map { it.id })
+        assertEquals("Nord", result.value.items.single().team?.name)
+    }
+
     private fun profile(canView: Boolean) = UserProfile(
         id = "42",
         name = "Field User",

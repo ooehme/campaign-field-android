@@ -49,7 +49,9 @@ class AssignmentHttpClientTest {
 
         val result = client.loadAssignments(userId = "7", teamIds = listOf("3"))
 
-        assertEquals(listOf("1", "2"), (result as AssignmentResult.Success).value.items.map { it.id })
+        val assignments = (result as AssignmentResult.Success).value.items
+        assertEquals(listOf("1", "2"), assignments.map { it.id })
+        assertTrue(assignments.all { it.team?.id == "3" })
         assertEquals("/api/teams/3/assignments?per_page=100&page=1", server.takeRequest().path)
         assertEquals("/api/teams/3/assignments?per_page=100&page=2", server.takeRequest().path)
     }

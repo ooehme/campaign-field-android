@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -50,6 +52,8 @@ import de.oliveroehme.campaignfield.ui.theme.FieldMuted
 import de.oliveroehme.campaignfield.ui.theme.FieldPanel
 import de.oliveroehme.campaignfield.ui.theme.FieldRed
 import de.oliveroehme.campaignfield.ui.theme.FieldWhite
+import de.oliveroehme.campaignfield.network.CoreApiStatus
+import de.oliveroehme.campaignfield.ui.status.LocationAccessState
 
 val FieldShape = RoundedCornerShape(8.dp)
 
@@ -58,14 +62,40 @@ fun FieldGridBackground(content: @Composable BoxScope.() -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(FieldBackground),
+            .background(FieldBackground)
+            .drawBehind {
+                val spacing = 32.dp.toPx()
+                var offset = 0f
+                while (offset <= size.height) {
+                    drawLine(
+                        color = FieldCyan.copy(alpha = 0.05f),
+                        start = androidx.compose.ui.geometry.Offset(0f, offset),
+                        end = androidx.compose.ui.geometry.Offset(size.width, offset),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    offset += spacing
+                }
+                offset = 0f
+                while (offset <= size.width) {
+                    drawLine(
+                        color = FieldCyan.copy(alpha = 0.04f),
+                        start = androidx.compose.ui.geometry.Offset(offset, 0f),
+                        end = androidx.compose.ui.geometry.Offset(offset, size.height),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                    offset += spacing
+                }
+            },
     ) {
         content()
     }
 }
 
 @Composable
-fun FieldHeader() {
+fun FieldHeader(
+    coreApiStatus: CoreApiStatus,
+    locationAccessState: LocationAccessState,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -98,14 +128,33 @@ fun FieldHeader() {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HeaderStatusIcon(
-                    icon = FieldIcons.MapPinX,
-                    tint = FieldAmber,
-                    contentDescription = "Standort nicht erfasst",
+                    icon = if (locationAccessState.hasPosition) {
+                        FieldIcons.MapPinCheck
+                    } else {
+                        FieldIcons.MapPinX
+                    },
+                    tint = when {
+                        locationAccessState.hasPosition -> FieldGreen
+                        locationAccessState.isRequesting -> FieldCyan
+                        else -> FieldAmber
+                    },
+                    contentDescription = locationAccessState.statusLabel,
+                    isLoading = locationAccessState.isRequesting,
+                    onClick = locationAccessState.requestPosition,
                 )
                 HeaderStatusIcon(
                     icon = FieldIcons.Server,
-                    tint = FieldGreen,
-                    contentDescription = "Core API erreichbar",
+                    tint = when (coreApiStatus) {
+                        CoreApiStatus.Checking -> FieldCyan
+                        CoreApiStatus.Reachable -> FieldGreen
+                        CoreApiStatus.Unreachable -> FieldAmber
+                    },
+                    contentDescription = when (coreApiStatus) {
+                        CoreApiStatus.Checking -> "Core API wird geprüft"
+                        CoreApiStatus.Reachable -> "Core API erreichbar"
+                        CoreApiStatus.Unreachable -> "Core API nicht erreichbar"
+                    },
+                    isLoading = coreApiStatus == CoreApiStatus.Checking,
                 )
             }
         }
@@ -117,21 +166,39 @@ private fun HeaderStatusIcon(
     icon: ImageVector,
     tint: Color,
     contentDescription: String,
+    isLoading: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     Box(
         modifier = Modifier
             .size(32.dp)
             .clip(CircleShape)
             .background(tint.copy(alpha = 0.10f))
-            .border(1.dp, tint.copy(alpha = 0.50f), CircleShape),
+            .border(1.dp, tint.copy(alpha = 0.50f), CircleShape)
+            .then(
+                if (onClick == null) {
+                    Modifier
+                } else {
+                    Modifier.clickable(role = Role.Button, onClick = onClick)
+                },
+            )
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            modifier = Modifier.size(16.dp),
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-        )
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                color = tint,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                modifier = Modifier.size(16.dp),
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+            )
+        }
     }
 }
 
@@ -181,8 +248,8 @@ enum class FieldStatusTone {
 @Composable
 fun FieldStatusPill(
     label: String,
-    tone: FieldStatusTone = FieldStatusTone.Neutral,
     modifier: Modifier = Modifier,
+    tone: FieldStatusTone = FieldStatusTone.Neutral,
 ) {
     val tint = when (tone) {
         FieldStatusTone.Ready -> FieldGreen

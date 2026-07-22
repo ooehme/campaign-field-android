@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
-import de.oliveroehme.campaignfield.domain.TeamSummary
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.network.assignment.AssignmentResult
 import kotlinx.coroutines.Job
@@ -19,18 +18,8 @@ import kotlinx.coroutines.launch
 data class AssignmentListUiState(
     val isLoading: Boolean = true,
     val items: List<AssignmentSummary> = emptyList(),
-    val selectedTeamId: String? = null,
     val errorMessage: String? = null,
-) {
-    val visibleItems: List<AssignmentSummary>
-        get() = selectedTeamId?.let { teamId -> items.filter { it.team?.id == teamId } } ?: items
-
-    val teamFilters: List<TeamSummary>
-        get() = items.mapNotNull(AssignmentSummary::team)
-            .filter { it.id != null }
-            .distinctBy { it.id }
-            .sortedBy { it.name.lowercase() }
-}
+)
 
 class AssignmentListViewModel(
     private val repository: AssignmentRepository,
@@ -50,12 +39,9 @@ class AssignmentListViewModel(
         loadJob = viewModelScope.launch {
             when (val result = repository.loadAssignments(profile)) {
                 is AssignmentResult.Success -> mutableState.update { current ->
-                    val selectedTeam = current.selectedTeamId
-                        ?.takeIf { selected -> result.value.items.any { it.team?.id == selected } }
                     current.copy(
                         isLoading = false,
                         items = result.value.items,
-                        selectedTeamId = selectedTeam,
                         errorMessage = null,
                     )
                 }
@@ -64,10 +50,6 @@ class AssignmentListViewModel(
                 }
             }
         }
-    }
-
-    fun selectTeam(teamId: String?) {
-        mutableState.update { it.copy(selectedTeamId = teamId) }
     }
 
     companion object {

@@ -22,8 +22,11 @@ class SessionViewModel(
 
     private val mutableLoginFeedback = MutableStateFlow(LoginFeedback())
     val loginFeedback: StateFlow<LoginFeedback> = mutableLoginFeedback.asStateFlow()
+    private val mutableIsRefreshingProfile = MutableStateFlow(false)
+    val isRefreshingProfile: StateFlow<Boolean> = mutableIsRefreshingProfile.asStateFlow()
     private var signInJob: Job? = null
     private var logoutJob: Job? = null
+    private var refreshProfileJob: Job? = null
 
     init {
         viewModelScope.launch { repository.restoreSession() }
@@ -41,6 +44,18 @@ class SessionViewModel(
     fun logout() {
         if (logoutJob?.isActive == true) return
         logoutJob = viewModelScope.launch { repository.logout() }
+    }
+
+    fun refreshProfile() {
+        if (refreshProfileJob?.isActive == true) return
+        refreshProfileJob = viewModelScope.launch {
+            mutableIsRefreshingProfile.value = true
+            try {
+                repository.refreshProfile()
+            } finally {
+                mutableIsRefreshingProfile.value = false
+            }
+        }
     }
 
     fun clearLoginFeedback() {

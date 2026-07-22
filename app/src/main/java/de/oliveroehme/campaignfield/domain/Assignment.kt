@@ -117,8 +117,7 @@ fun List<AssignmentSummary>.forOperativeOverview(): List<AssignmentSummary> =
         .filterNot { it.status == AssignmentStatus.DRAFT }
         .sortedWith(
             compareBy<AssignmentSummary> { it.status.sortOrder }
-                .thenBy { dueSortValue(it.dueAt) }
-                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+                .thenBy { dueSortValue(it.dueAt) },
         )
         .toList()
 

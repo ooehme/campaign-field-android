@@ -47,6 +47,11 @@ class SessionRepository(
         applyAuthenticationResult(remote.signIn(email.trim(), password))
     }
 
+    suspend fun refreshProfile() = operationMutex.withLock {
+        if (mutableAuthState.value !is AuthState.SignedIn) return@withLock
+        applyAuthenticationResult(remote.checkSession())
+    }
+
     suspend fun logout() = operationMutex.withLock {
         val profile = (mutableAuthState.value as? AuthState.SignedIn)?.profile
             ?: (mutableAuthState.value as? AuthState.SigningOut)?.profile

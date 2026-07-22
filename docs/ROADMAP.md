@@ -89,9 +89,11 @@ offline fehl; sensible Daten bleiben in Caches oder temporären Dateien.
 - Passwort, Cookies und Response-Payloads erscheinen nicht in Logcat.
 - Logout räumt Cookies, Datenbank, Queue, Fotos und Standortzustand auf.
 
-**Ergebnis/Restpunkte:** Direkte und `{data: ...}`-Antworten sowie mehrere Team-/Rollenformen
-werden defensiv gelesen; fehlende `can`-Flags bleiben `false`. Offen sind das kanonische
-`/user`-Schema, serverseitige Sessioninvalidierung bei Offline-Logout und der Einladungsscope.
+**Ergebnis/Restpunkte:** Die Sitzung wird über `/user` bestätigt; `/users/{id}` liefert wie in
+der Referenz die maßgeblichen Profildetails und Teamzugehörigkeiten. Direkte und
+`{data: ...}`-Antworten sowie mehrere Team-/Rollenformen werden defensiv gelesen; fehlende
+`can`-Flags bleiben `false`. Offen sind das kanonische `/user`-Schema, serverseitige
+Sessioninvalidierung bei Offline-Logout und der Einladungsscope.
 
 ## 4. Assignment-Liste und Assignment-Details
 
@@ -129,6 +131,10 @@ defensiv gelesen; unbekannte Typen/Status bleiben darstellbar. Statusmutationen 
 zur verbindlichen Übergangs- und `can`-Matrix bewusst ausgesetzt.
 
 ## 5. MapLibre-Karte und Standort
+
+**Vorarbeit:** Die App-Shell prüft `/health` alle 30 Sekunden. Das Standorticon fordert
+auf Nutzeraktion die präzise Standortberechtigung an, öffnet bei deaktiviertem GPS die
+Systemeinstellungen und speichert genau eine ausreichend genaue Position nur im Speicher.
 
 **Ziel:** Native operative Karte mit optionalem, nutzerkontrolliertem Standort.
 

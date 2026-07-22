@@ -246,7 +246,9 @@ private fun FieldInput(
 fun ProfileScreen(
     contentPadding: PaddingValues,
     profile: UserProfile,
+    isRefreshingProfile: Boolean,
     isLoggingOut: Boolean,
+    onRefreshProfile: () -> Unit,
     onLogout: () -> Unit,
 ) {
     Column(
@@ -280,7 +282,7 @@ fun ProfileScreen(
             ProfileDetailRow(
                 modifier = Modifier.padding(top = 12.dp),
                 label = "App-Rolle",
-                value = profile.roles.firstOrNull()?.formatRole() ?: "Keine Rolle",
+                value = profile.appRole?.formatRole() ?: "Keine Rolle",
             )
         }
 
@@ -342,7 +344,21 @@ fun ProfileScreen(
                                 )
                             }
                             Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                                Text(team.teamName, color = FieldWhite, style = MaterialTheme.typography.titleMedium)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        modifier = Modifier.weight(1f, fill = false),
+                                        text = team.teamName,
+                                        color = FieldWhite,
+                                        style = MaterialTheme.typography.titleMedium,
+                                    )
+                                    if (team.isCurrent) {
+                                        FieldStatusPill(
+                                            modifier = Modifier.padding(start = 8.dp),
+                                            label = "Aktuell",
+                                            tone = FieldStatusTone.Ready,
+                                        )
+                                    }
+                                }
                                 Text(
                                     modifier = Modifier.padding(top = 4.dp),
                                     text = team.teamId?.let { "Team #$it" } ?: "Team",
@@ -351,14 +367,24 @@ fun ProfileScreen(
                                 )
                             }
                             FieldStatusPill(
-                                label = team.roles.firstOrNull()?.formatRole() ?: "Mitglied",
-                                tone = if (team.roles.any { it.contains("lead", ignoreCase = true) }) FieldStatusTone.Warning else FieldStatusTone.Neutral,
+                                label = team.role?.formatRole() ?: "Mitglied",
+                                tone = if (team.role.isTeamLeadRole()) FieldStatusTone.Warning else FieldStatusTone.Neutral,
                             )
                         }
                     }
                 }
             }
         }
+
+        FieldActionButton(
+            modifier = Modifier.fillMaxWidth(),
+            text = if (isRefreshingProfile) "Profil wird aktualisiert …" else "Profil aktualisieren",
+            icon = FieldIcons.RefreshCcw,
+            isLoading = isRefreshingProfile,
+            enabled = !isRefreshingProfile && !isLoggingOut,
+            variant = FieldButtonVariant.Secondary,
+            onClick = onRefreshProfile,
+        )
 
         FieldActionButton(
             modifier = Modifier.fillMaxWidth(),
@@ -391,6 +417,12 @@ private fun String.formatRole(): String = when (trim().lowercase().replace('-', 
     "member" -> "Mitglied"
     else -> replace('_', ' ')
 }
+
+private fun String?.isTeamLeadRole(): Boolean = this
+    ?.trim()
+    ?.lowercase()
+    ?.replace(Regex("[-\\s]+"), "_")
+    .let { it == "lead" || it == "leader" || it == "teamlead" || it == "team_lead" || it == "team_leader" }
 
 private fun String.initials(fallback: String): String = trim()
     .split(Regex("\\s+"))

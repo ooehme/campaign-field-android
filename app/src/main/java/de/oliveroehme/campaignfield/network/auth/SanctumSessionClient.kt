@@ -84,11 +84,42 @@ class SanctumSessionClient internal constructor(
             ?: return SessionResult.Failure(SessionErrorNormalizer.invalidResponse(SessionStage.USER))
         return runCatching { userProfileParser.parse(payload) }
             .fold(
-                onSuccess = SessionResult::Authenticated,
+                onSuccess = ::loadDetailedProfile,
                 onFailure = {
                     SessionResult.Failure(SessionErrorNormalizer.invalidResponse(SessionStage.USER))
                 },
             )
+    }
+
+    private fun loadDetailedProfile(sessionProfile: UserProfile): SessionResult {
+        val userId = sessionProfile.id ?: return SessionResult.Authenticated(sessionProfile)
+        val outcome = execute(
+            Request.Builder()
+                .url(configuration.apiEndpointSegments("users", userId))
+                .get()
+                .build(),
+            readBody = true,
+        )
+        if (outcome is CallOutcome.Http && outcome.status == 401) {
+            return SessionResult.Failure(SessionErrorNormalizer.from(SessionStage.USER, 401))
+        }
+        val payload = (outcome as? CallOutcome.Http)
+            ?.takeIf { it.status in 200..299 }
+            ?.body
+            ?.takeIf { it.toByteArray().size <= MAX_USER_RESPONSE_BYTES }
+            ?: return SessionResult.Authenticated(sessionProfile)
+        val detailedProfile = runCatching { userProfileParser.parse(payload) }.getOrNull()
+            ?: return SessionResult.Authenticated(sessionProfile)
+        return SessionResult.Authenticated(
+            detailedProfile.copy(
+                id = detailedProfile.id ?: sessionProfile.id,
+                name = detailedProfile.name.takeUnless { it == "Unbekannter Benutzer" }
+                    ?: sessionProfile.name,
+                email = detailedProfile.email.ifBlank { sessionProfile.email },
+                appRole = detailedProfile.appRole ?: sessionProfile.appRole,
+                roles = detailedProfile.roles.ifEmpty { sessionProfile.roles },
+            ),
+        )
     }
 
     private fun execute(request: Request, readBody: Boolean = false): CallOutcome = try {

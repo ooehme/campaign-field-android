@@ -71,11 +71,9 @@ fun AssignmentsScreen(
     contentPadding: PaddingValues,
     state: AssignmentListUiState,
     onRefresh: () -> Unit,
-    onSelectTeam: (String?) -> Unit,
+    onOpenSync: () -> Unit,
     onOpenAssignment: (String) -> Unit,
 ) {
-    @Suppress("UNUSED_VARIABLE")
-    val retainedTeamSelection = onSelectTeam
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(contentPadding),
         contentPadding = PaddingValues(start = 16.dp, top = 20.dp, end = 16.dp, bottom = 20.dp),
@@ -116,7 +114,7 @@ fun AssignmentsScreen(
             state.errorMessage != null && state.items.isEmpty() -> item {
                 AssignmentError(message = state.errorMessage, onRetry = onRefresh)
             }
-            state.visibleItems.isEmpty() -> item {
+            state.items.isEmpty() -> item {
                 FieldEmptyState(
                     title = "Keine Aufträge",
                     message = "Für dein Team sind aktuell keine Assignments verfügbar.",
@@ -126,7 +124,7 @@ fun AssignmentsScreen(
                 state.errorMessage?.let { message ->
                     item { FieldMessagePanel(message = message, tint = FieldRed) }
                 }
-                items(state.visibleItems, key = AssignmentSummary::id) { assignment ->
+                items(state.items, key = AssignmentSummary::id) { assignment ->
                     AssignmentCard(assignment = assignment, onOpenAssignment = onOpenAssignment)
                 }
             }
@@ -138,7 +136,7 @@ fun AssignmentsScreen(
                 text = "Sync prüfen",
                 icon = FieldIcons.RefreshCcw,
                 variant = FieldButtonVariant.Secondary,
-                onClick = onRefresh,
+                onClick = onOpenSync,
             )
         }
     }
@@ -277,18 +275,21 @@ private fun AssignmentMetaRow(
 fun AssignmentDetailScreen(
     contentPadding: PaddingValues,
     state: AssignmentDetailUiState,
-    onBack: () -> Unit,
     onRefresh: () -> Unit,
     onOpenMap: () -> Unit,
+    onOpenProof: () -> Unit,
+    onOpenSync: () -> Unit,
 ) {
-    @Suppress("UNUSED_VARIABLE")
-    val systemBackNavigation = onBack
     when {
         state.isLoading && state.assignment == null -> AssignmentDetailLoading(contentPadding)
         state.errorMessage != null && state.assignment == null -> Box(
             modifier = Modifier.fillMaxSize().padding(contentPadding).padding(16.dp),
         ) {
-            AssignmentError(message = state.errorMessage, onRetry = onRefresh)
+            AssignmentError(
+                title = "Assignment konnte nicht geladen werden.",
+                message = state.errorMessage,
+                onRetry = onRefresh,
+            )
         }
         state.assignment != null -> AssignmentDetailContent(
             contentPadding = contentPadding,
@@ -297,6 +298,8 @@ fun AssignmentDetailScreen(
             errorMessage = state.errorMessage,
             onRefresh = onRefresh,
             onOpenMap = onOpenMap,
+            onOpenProof = onOpenProof,
+            onOpenSync = onOpenSync,
         )
     }
 }
@@ -309,6 +312,8 @@ private fun AssignmentDetailContent(
     errorMessage: String?,
     onRefresh: () -> Unit,
     onOpenMap: () -> Unit,
+    onOpenProof: () -> Unit,
+    onOpenSync: () -> Unit,
 ) {
     val assignment = detail.summary
     Column(
@@ -363,7 +368,7 @@ private fun AssignmentDetailContent(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     detail.instructions.forEach { instruction ->
-                        Column(
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(FieldShape)
@@ -371,9 +376,7 @@ private fun AssignmentDetailContent(
                                 .border(1.dp, FieldBorder, FieldShape)
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
-                            Text(instruction.label, color = FieldMuted, style = MaterialTheme.typography.labelMedium)
                             Text(
-                                modifier = Modifier.padding(top = 2.dp),
                                 text = instruction.value,
                                 color = FieldWhite,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -401,7 +404,7 @@ private fun AssignmentDetailContent(
                 icon = FieldIcons.FileText,
                 enabled = detail.permissions.createProof,
                 variant = FieldButtonVariant.Secondary,
-                onClick = {},
+                onClick = onOpenProof,
             )
         }
 
@@ -417,7 +420,7 @@ private fun AssignmentDetailContent(
             text = "Synchronisieren",
             icon = FieldIcons.CheckCircle,
             variant = FieldButtonVariant.Secondary,
-            onClick = onRefresh,
+            onClick = onOpenSync,
         )
     }
 }
@@ -461,7 +464,11 @@ private fun AssignmentDetailLoading(contentPadding: PaddingValues) {
 }
 
 @Composable
-private fun AssignmentError(message: String, onRetry: () -> Unit) {
+private fun AssignmentError(
+    message: String,
+    onRetry: () -> Unit,
+    title: String = "Aufträge konnten nicht geladen werden.",
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -470,7 +477,7 @@ private fun AssignmentError(message: String, onRetry: () -> Unit) {
             .border(1.dp, FieldRed.copy(alpha = 0.50f), FieldShape)
             .padding(16.dp),
     ) {
-        Text("Aufträge konnten nicht geladen werden.", color = FieldRed, style = MaterialTheme.typography.titleSmall)
+        Text(title, color = FieldRed, style = MaterialTheme.typography.titleSmall)
         Text(modifier = Modifier.padding(top = 8.dp), text = message, color = FieldRed, style = MaterialTheme.typography.bodyMedium)
         FieldActionButton(
             modifier = Modifier.padding(top = 16.dp),

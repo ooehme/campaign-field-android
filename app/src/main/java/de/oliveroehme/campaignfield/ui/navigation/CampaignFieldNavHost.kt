@@ -18,6 +18,7 @@ import de.oliveroehme.campaignfield.ui.assignment.AssignmentListViewModel
 import de.oliveroehme.campaignfield.ui.screens.AssignmentDetailScreen
 import de.oliveroehme.campaignfield.ui.screens.MapScreen
 import de.oliveroehme.campaignfield.ui.screens.ProfileScreen
+import de.oliveroehme.campaignfield.ui.screens.ProofScreen
 import de.oliveroehme.campaignfield.ui.screens.SyncScreen
 
 @Composable
@@ -26,7 +27,9 @@ fun CampaignFieldNavHost(
     contentPadding: PaddingValues,
     profile: UserProfile,
     assignmentRepository: AssignmentRepository,
+    isRefreshingProfile: Boolean,
     isLoggingOut: Boolean,
+    onRefreshProfile: () -> Unit,
     onLogout: () -> Unit,
 ) {
     NavHost(
@@ -42,7 +45,9 @@ fun CampaignFieldNavHost(
                 contentPadding = contentPadding,
                 state = state,
                 onRefresh = viewModel::refresh,
-                onSelectTeam = viewModel::selectTeam,
+                onOpenSync = {
+                    navController.navigate(AppDestination.Sync.route) { launchSingleTop = true }
+                },
                 onOpenAssignment = { id ->
                     navController.navigate(AppDestination.assignmentDetailRoute(id))
                 },
@@ -61,15 +66,39 @@ fun CampaignFieldNavHost(
             AssignmentDetailScreen(
                 contentPadding = contentPadding,
                 state = state,
-                onBack = navController::navigateUp,
                 onRefresh = viewModel::refresh,
                 onOpenMap = {
-                    navController.navigate(AppDestination.Map.route) { launchSingleTop = true }
+                    navController.navigate(AppDestination.assignmentMapRoute(assignmentId)) {
+                        launchSingleTop = true
+                    }
+                },
+                onOpenProof = {
+                    navController.navigate(AppDestination.assignmentProofRoute(assignmentId)) {
+                        launchSingleTop = true
+                    }
+                },
+                onOpenSync = {
+                    navController.navigate(AppDestination.Sync.route) { launchSingleTop = true }
                 },
             )
         }
+        composable(
+            route = AppDestination.AssignmentMap.route,
+            arguments = listOf(navArgument("assignmentId") { type = NavType.StringType }),
+        ) {
+            MapScreen(contentPadding, includeStatusBarInset = false)
+        }
+        composable(
+            route = AppDestination.AssignmentProof.route,
+            arguments = listOf(navArgument("assignmentId") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            ProofScreen(
+                contentPadding = contentPadding,
+                assignmentId = requireNotNull(backStackEntry.arguments?.getString("assignmentId")),
+            )
+        }
         composable(AppDestination.Map.route) {
-            MapScreen(contentPadding)
+            MapScreen(contentPadding, includeStatusBarInset = true)
         }
         composable(AppDestination.Sync.route) {
             SyncScreen(contentPadding)
@@ -78,7 +107,9 @@ fun CampaignFieldNavHost(
             ProfileScreen(
                 contentPadding = contentPadding,
                 profile = profile,
+                isRefreshingProfile = isRefreshingProfile,
                 isLoggingOut = isLoggingOut,
+                onRefreshProfile = onRefreshProfile,
                 onLogout = onLogout,
             )
         }

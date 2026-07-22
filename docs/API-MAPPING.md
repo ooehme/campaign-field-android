@@ -104,9 +104,11 @@ ist laut Praxistest-Datei teilweise behoben, muss aber serverseitig erneut verif
 Native Abweichung: Cookies dürfen nicht im Klartext gespeichert werden. Der Cookie-Jar
 wird persistent verschlüsselt, sein Schlüssel liegt im Android Keystore.
 
-Phase 3 setzt diesen Ablauf produktiv um. Das Profilmodell liest direkte Antworten und
-`{data: ...}`-Hüllen, normalisiert Rollen und Teammitgliedschaften ausschließlich zur
-Anzeige und behandelt fehlende `can`-Flags strikt als `false`. Offline-Logout entfernt
+Phase 3 setzt diesen Ablauf produktiv um. Nach der Sitzungsbestätigung lädt die App wie die
+Referenz zusätzlich `/users/{id}`; diese Antwort ist für Teamzugehörigkeiten maßgeblich,
+während ein 403/404/Netzwerkfehler die bestätigte Sitzung nicht verwirft. Das Profilmodell
+liest direkte Antworten und `{data: ...}`-Hüllen, normalisiert Rollen und
+Teammitgliedschaften ausschließlich zur Anzeige und behandelt fehlende `can`-Flags strikt als `false`. Offline-Logout entfernt
 lokale Daten und weist getrennt auf eine fehlgeschlagene serverseitige Abmeldung hin.
 
 ## `can`-Berechtigungslogik

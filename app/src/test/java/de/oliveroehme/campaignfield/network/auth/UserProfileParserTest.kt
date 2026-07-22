@@ -30,9 +30,10 @@ class UserProfileParserTest {
 
         assertEquals("42", profile.id)
         assertEquals(listOf("field_agent", "Außendienst"), profile.roles)
+        assertEquals("field_agent", profile.appRole)
         assertTrue(profile.permissions.viewAssignments)
         assertEquals("Nord", profile.teams.single().teamName)
-        assertEquals(listOf("Mitglied"), profile.teams.single().roles)
+        assertEquals("Mitglied", profile.teams.single().role)
     }
 
     @Test
@@ -69,8 +70,29 @@ class UserProfileParserTest {
         val teams = profile.teams.associateBy { it.teamId }
         assertEquals(setOf("7", "8", "9", "10", "11", "12"), teams.keys)
         assertEquals("Stammteam", teams["7"]?.teamName)
-        assertEquals(listOf("lead"), teams["11"]?.roles)
-        assertEquals(listOf("Mitglied"), teams["12"]?.roles)
+        assertEquals("8", profile.teams.first().teamId)
+        assertTrue(teams["8"]?.isCurrent == true)
+        assertEquals("lead", teams["11"]?.role)
+        assertEquals("Mitglied", teams["12"]?.role)
+    }
+
+    @Test
+    fun `does not mistake membership record id for a team id`() {
+        val profile = parser.parse(
+            """
+            {
+              "id": 1,
+              "name": "A",
+              "memberships": [
+                {"id": 99, "role": "member"},
+                {"id": 100, "team_id": 7, "team": {"id": 8, "name": "Nord"}}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("7"), profile.teams.mapNotNull { it.teamId })
+        assertEquals("Nord", profile.teams.single().teamName)
     }
 
     @Test

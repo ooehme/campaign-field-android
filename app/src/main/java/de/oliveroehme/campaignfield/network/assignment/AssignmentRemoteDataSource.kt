@@ -3,6 +3,7 @@ package de.oliveroehme.campaignfield.network.assignment
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
+import de.oliveroehme.campaignfield.domain.TeamSummary
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -38,7 +39,13 @@ class AssignmentHttpClient internal constructor(
             val combined = mutableListOf<AssignmentSummary>()
             for (teamId in uniqueTeams) {
                 when (val teamResult = loadAllPages(listOf("teams", teamId, "assignments"))) {
-                    is AssignmentResult.Success -> combined += teamResult.value.items
+                    is AssignmentResult.Success -> combined += teamResult.value.items.map { assignment ->
+                        if (assignment.team?.id == null) {
+                            assignment.copy(team = TeamSummary(teamId, "Team #$teamId"))
+                        } else {
+                            assignment
+                        }
+                    }
                     is AssignmentResult.Failure -> {
                         if (!userId.isNullOrBlank() && teamResult.failure.shouldUseUserFallback) {
                             return@withContext loadAllPages(listOf("users", userId, "assignments"))

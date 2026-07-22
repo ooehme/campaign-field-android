@@ -17,8 +17,8 @@ Assignment-Liste und -Details.
 ## Stand
 
 Enthalten sind Login, Session-Wiederherstellung, Profil/Teams, Logout, zentraler
-401-Cleanup, die App-Shell sowie Assignment-Liste und -Details mit Pagination,
-Referenzsortierung und Teamfilter. Der technische Sanctum-Nachweis steht in
+401-Cleanup, die App-Shell mit echtem API-/Standortstatus sowie Assignment-Liste und
+Assignment-Details mit Pagination, Referenzsortierung und Teamabgleich. Der technische Sanctum-Nachweis steht in
 [SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt die MapLibre-Karte aus
 Phase 5 der [Roadmap](docs/ROADMAP.md).
 

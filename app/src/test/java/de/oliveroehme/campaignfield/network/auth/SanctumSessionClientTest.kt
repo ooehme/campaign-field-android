@@ -54,6 +54,10 @@ class SanctumSessionClientTest {
             MockResponse().setResponseCode(200)
                 .setBody("{\"id\":1,\"name\":\"Field User\",\"email\":\"field@example.test\"}"),
         )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("{\"data\":{\"id\":1,\"name\":\"Field User\",\"email\":\"field@example.test\"}}"),
+        )
         val client = client()
 
         assertEquals(
@@ -71,6 +75,7 @@ class SanctumSessionClientTest {
         val csrfRequest = server.takeRequest()
         val loginRequest = server.takeRequest()
         val userRequest = server.takeRequest()
+        val profileRequest = server.takeRequest()
         assertEquals("/sanctum/csrf-cookie", csrfRequest.path)
         assertEquals("/api/login", loginRequest.path)
         assertEquals("first=", loginRequest.getHeader("X-XSRF-TOKEN"))
@@ -86,6 +91,45 @@ class SanctumSessionClientTest {
         assertEquals("application/json", userRequest.getHeader("Accept"))
         assertEquals(configuration.sanctumClientOrigin.toString().trimEnd('/'), userRequest.getHeader("Origin"))
         assertEquals(configuration.sanctumClientOrigin.toString(), userRequest.getHeader("Referer"))
+        assertEquals("/api/users/1", profileRequest.path)
+    }
+
+    @Test
+    fun `uses detailed user profile as authority for team memberships`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("{\"id\":1,\"name\":\"Field User\",\"team_id\":3}"),
+        )
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody(
+                    """
+                    {"data":{"id":1,"name":"Field User","current_team_id":8,
+                    "teams":[{"id":8,"name":"Team Nord","pivot":{"role":"lead"}}]}}
+                    """.trimIndent(),
+                ),
+        )
+
+        val result = client().checkSession() as SessionResult.Authenticated
+
+        assertEquals(listOf("8"), result.profile.teams.mapNotNull { it.teamId })
+        assertEquals("lead", result.profile.teams.single().role)
+        assertTrue(result.profile.teams.single().isCurrent)
+        assertEquals("/api/user", server.takeRequest().path)
+        assertEquals("/api/users/1", server.takeRequest().path)
+    }
+
+    @Test
+    fun `keeps authenticated session when optional profile detail is forbidden`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setBody("{\"id\":1,\"name\":\"Field User\",\"team_id\":3}"),
+        )
+        server.enqueue(MockResponse().setResponseCode(403))
+
+        val result = client().checkSession() as SessionResult.Authenticated
+
+        assertEquals(listOf("3"), result.profile.teams.mapNotNull { it.teamId })
     }
 
     @Test

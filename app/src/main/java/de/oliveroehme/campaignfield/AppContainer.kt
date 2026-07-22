@@ -8,7 +8,10 @@ import de.oliveroehme.campaignfield.data.auth.AndroidUserProfileStore
 import de.oliveroehme.campaignfield.data.auth.SessionRepository
 import de.oliveroehme.campaignfield.data.auth.UnauthorizedSessionHandler
 import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
+import de.oliveroehme.campaignfield.location.AndroidCurrentLocationRequester
 import de.oliveroehme.campaignfield.network.ApiConfiguration
+import de.oliveroehme.campaignfield.network.CoreApiHealthClient
+import de.oliveroehme.campaignfield.network.CoreApiHealthSource
 import de.oliveroehme.campaignfield.network.auth.AndroidEncryptedCookiePersistence
 import de.oliveroehme.campaignfield.network.auth.PersistentCookieJar
 import de.oliveroehme.campaignfield.network.auth.SanctumHttpClient
@@ -18,6 +21,9 @@ import de.oliveroehme.campaignfield.network.assignment.AssignmentHttpClient
 class AppContainer(context: Context) {
     val sessionRepository: SessionRepository
     val assignmentRepository: AssignmentRepository
+    val coreApiHealthSource: CoreApiHealthSource
+    val locationSessionState: InMemoryLocationSessionState
+    val currentLocationRequester: AndroidCurrentLocationRequester
 
     init {
         val applicationContext = context.applicationContext
@@ -27,11 +33,13 @@ class AppContainer(context: Context) {
             AndroidEncryptedCookiePersistence(applicationContext),
         )
         val profileStore = AndroidUserProfileStore(applicationContext)
+        locationSessionState = InMemoryLocationSessionState()
+        currentLocationRequester = AndroidCurrentLocationRequester(applicationContext)
         val cleaner = AndroidLocalSessionCleaner(
             context = applicationContext,
             cookieJar = cookieJar,
             profileStore = profileStore,
-            locationState = InMemoryLocationSessionState(),
+            locationState = locationSessionState,
         )
         val unauthorizedHandler = UnauthorizedSessionHandler(cleaner)
         val httpClient = SanctumHttpClient.create(
@@ -48,5 +56,6 @@ class AppContainer(context: Context) {
         assignmentRepository = DefaultAssignmentRepository(
             AssignmentHttpClient(configuration, httpClient),
         )
+        coreApiHealthSource = CoreApiHealthClient(configuration, httpClient)
     }
 }

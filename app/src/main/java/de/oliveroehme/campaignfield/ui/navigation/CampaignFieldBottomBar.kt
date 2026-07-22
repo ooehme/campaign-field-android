@@ -53,7 +53,14 @@ fun CampaignFieldBottomBar(
     ) {
         AppDestination.shellItems.forEach { destination ->
             val selected = currentRoute == destination.route ||
-                (destination == AppDestination.Assignments && currentRoute == AppDestination.AssignmentDetail.route)
+                (
+                    destination == AppDestination.Assignments &&
+                        currentRoute in setOf(
+                            AppDestination.AssignmentDetail.route,
+                            AppDestination.AssignmentMap.route,
+                            AppDestination.AssignmentProof.route,
+                        )
+                    )
             val shape = RoundedCornerShape(8.dp)
             Box(
                 modifier = Modifier
@@ -63,10 +70,21 @@ fun CampaignFieldBottomBar(
                     .background(if (selected) FieldCyan.copy(alpha = 0.10f) else Color.Transparent)
                     .border(1.dp, if (selected) FieldCyan else Color.Transparent, shape)
                     .clickable {
-                        navController.navigate(destination.route) {
-                            launchSingleTop = true
-                            restoreState = true
-                            popUpTo(AppDestination.Assignments.route) { saveState = true }
+                        if (destination == AppDestination.Assignments) {
+                            navController.navigate(AppDestination.Assignments.route) {
+                                launchSingleTop = true
+                                restoreState = false
+                                popUpTo(AppDestination.Assignments.route) {
+                                    inclusive = false
+                                    saveState = false
+                                }
+                            }
+                        } else {
+                            navController.navigate(destination.route) {
+                                launchSingleTop = true
+                                restoreState = true
+                                popUpTo(AppDestination.Assignments.route) { saveState = true }
+                            }
                         }
                     },
                 contentAlignment = Alignment.Center,

@@ -13,7 +13,6 @@ import de.oliveroehme.campaignfield.domain.TeamSummary
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -71,9 +70,7 @@ internal class AssignmentParser(
         val typeConfig = assignment["type_config"]
         return AssignmentDetail(
             summary = parseSummary(assignment),
-            description = assignment.text("description")
-                ?: assignment.text("briefing")
-                ?: assignment.text("notes"),
+            description = assignment.text("description"),
             instructions = parseInstructions(typeConfig),
             permissions = parsePermissions(assignment["can"] as? JsonObject),
         )
@@ -87,18 +84,21 @@ internal class AssignmentParser(
             assignment = assignment,
             objectKeys = arrayOf("campaign"),
             idKeys = arrayOf("campaign_id"),
+            labelKeys = arrayOf("title", "name", "label"),
             fallbackPrefix = "Kampagne",
         )?.let { CampaignSummary(it.id, it.name) }
         val team = relation(
             assignment = assignment,
             objectKeys = arrayOf("team"),
             idKeys = arrayOf("team_id"),
+            labelKeys = arrayOf("name", "label"),
             fallbackPrefix = "Team",
         )?.let { TeamSummary(it.id, it.name) }
         val area = relation(
             assignment = assignment,
-            objectKeys = arrayOf("area", "target_area"),
-            idKeys = arrayOf("area_id", "target_area_id"),
+            objectKeys = arrayOf("target_area", "area"),
+            idKeys = arrayOf("target_area_id", "area_id"),
+            labelKeys = arrayOf("name", "label"),
             fallbackPrefix = "Zielgebiet",
         )?.let { AreaSummary(it.id, it.name) }
         return AssignmentSummary(
@@ -112,27 +112,38 @@ internal class AssignmentParser(
                 assignment.text("type") ?: assignment.text("assignment_type"),
             ),
             status = AssignmentStatus.fromApi(assignment.text("status")),
-            startsAt = assignment.firstText("starts_at", "start_at", "start_date"),
-            dueAt = assignment.firstText("due_at", "due_date", "ends_at", "end_date"),
+            startsAt = assignment.text("starts_at"),
+            dueAt = assignment.text("due_at"),
             campaign = campaign,
             team = team,
             area = area,
         )
     }
 
-    private fun parseInstructions(typeConfig: JsonElement?): List<AssignmentInstruction> = when (typeConfig) {
-        is JsonPrimitive -> typeConfig.displayValue()?.let {
-            listOf(AssignmentInstruction("Anweisungen", it))
-        }.orEmpty()
-        is JsonArray -> typeConfig.displayValue()?.let {
-            listOf(AssignmentInstruction("Anweisungen", it))
-        }.orEmpty()
-        is JsonObject -> typeConfig.entries.mapNotNull { (key, value) ->
-            if (key in HIDDEN_TYPE_CONFIG_KEYS) return@mapNotNull null
-            value.displayValue()?.takeIf(String::isNotBlank)?.let {
-                AssignmentInstruction(TYPE_CONFIG_LABELS[key] ?: humanize(key), it)
-            }
+    private fun parseInstructions(typeConfig: JsonElement?): List<AssignmentInstruction> {
+        val config = typeConfig as? JsonObject ?: return emptyList()
+        return INSTRUCTION_KEYS
+            .flatMap { key -> readInstructionValues(config[key]) }
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .map { AssignmentInstruction("Anweisung", it) }
+    }
+
+    private fun readInstructionValues(value: JsonElement?): List<String> = when (value) {
+        is JsonPrimitive -> if (value.isString) {
+            value.contentOrNull?.let(::listOf).orEmpty()
+        } else {
+            emptyList()
         }
+        is JsonArray -> value.flatMap(::readInstructionValues)
+        is JsonObject -> INSTRUCTION_TEXT_KEYS.firstNotNullOfOrNull { key ->
+            (value[key] as? JsonPrimitive)
+                ?.takeIf { it.isString }
+                ?.contentOrNull
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
+        }?.let(::listOf).orEmpty()
         else -> emptyList()
     }
 
@@ -154,30 +165,14 @@ internal class AssignmentParser(
         assignment: JsonObject,
         objectKeys: Array<String>,
         idKeys: Array<String>,
+        labelKeys: Array<String>,
         fallbackPrefix: String,
     ): Relation? {
         val objectValue = objectKeys.firstNotNullOfOrNull { assignment[it] as? JsonObject }
         val id = objectValue?.text("id") ?: assignment.firstText(*idKeys)
-        val name = objectValue?.firstText("name", "title", "label")
+        val name = objectValue?.firstText(*labelKeys)
         if (id == null && name == null) return null
         return Relation(id, name ?: "$fallbackPrefix #$id")
-    }
-
-    private fun JsonElement.displayValue(): String? = when (this) {
-        JsonNull -> null
-        is JsonPrimitive -> when {
-            !isString && booleanOrNull != null -> if (booleanOrNull == true) "Ja" else "Nein"
-            else -> contentOrNull?.trim()?.takeIf(String::isNotEmpty)
-        }
-        is JsonArray -> mapNotNull { item ->
-            when (item) {
-                is JsonObject -> item.firstText("label", "name", "title", "value", "description")
-                else -> item.displayValue()
-            }
-        }.joinToString(" · ").takeIf(String::isNotBlank)
-        is JsonObject -> entries.mapNotNull { (key, value) ->
-            value.displayValue()?.let { "${TYPE_CONFIG_LABELS[key] ?: humanize(key)}: $it" }
-        }.joinToString(" · ").takeIf(String::isNotBlank)
     }
 
     private fun JsonObject?.strictBoolean(key: String): Boolean {
@@ -198,24 +193,23 @@ internal class AssignmentParser(
         ?.trim()
         ?.takeIf(String::isNotEmpty)
 
-    private fun humanize(value: String): String = value
-        .split('_', '-')
-        .filter(String::isNotBlank)
-        .joinToString(" ") { part -> part.replaceFirstChar(Char::uppercase) }
-
     private data class Relation(val id: String?, val name: String)
 
     private companion object {
-        val HIDDEN_TYPE_CONFIG_KEYS = setOf("id", "geojson", "geometry", "coordinates")
-        val TYPE_CONFIG_LABELS = mapOf(
-            "instructions" to "Anweisungen",
-            "instruction" to "Anweisung",
-            "material" to "Material",
-            "materials" to "Material",
-            "quantity" to "Menge",
-            "count" to "Anzahl",
-            "notes" to "Hinweise",
-            "target" to "Ziel",
+        val INSTRUCTION_KEYS = listOf(
+            "instructions",
+            "required_instructions",
+            "mandatory_instructions",
+            "briefing",
+            "checklist",
+            "steps",
+        )
+        val INSTRUCTION_TEXT_KEYS = listOf(
+            "instruction",
+            "text",
+            "label",
+            "title",
+            "description",
         )
     }
 }

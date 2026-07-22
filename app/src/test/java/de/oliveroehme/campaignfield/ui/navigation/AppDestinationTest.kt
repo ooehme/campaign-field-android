@@ -9,7 +9,7 @@ class AppDestinationTest {
         AppDestination.Assignments.route
 
         assertEquals(
-            listOf("assignments", "map", "sync", "profile"),
+            listOf("assignments", "scanner", "sync", "profile"),
             AppDestination.shellItems.map(AppDestination::route),
         )
     }

@@ -7,6 +7,7 @@ data class UserProfile(
     val id: String?,
     val name: String,
     val email: String,
+    val appRole: String? = null,
     val roles: List<String> = emptyList(),
     val teams: List<TeamMembership> = emptyList(),
     val permissions: UserPermissions = UserPermissions(),
@@ -16,7 +17,8 @@ data class UserProfile(
 data class TeamMembership(
     val teamId: String?,
     val teamName: String,
-    val roles: List<String> = emptyList(),
+    val role: String? = null,
+    val isCurrent: Boolean = false,
 )
 
 @Serializable
