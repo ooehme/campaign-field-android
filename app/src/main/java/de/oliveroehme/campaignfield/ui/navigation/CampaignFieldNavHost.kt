@@ -2,6 +2,7 @@ package de.oliveroehme.campaignfield.ui.navigation
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -28,6 +29,8 @@ import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
 import de.oliveroehme.campaignfield.location.LocationSource
 import de.oliveroehme.campaignfield.map.MapConfiguration
 import de.oliveroehme.campaignfield.network.NetworkStateProvider
+import de.oliveroehme.campaignfield.network.auth.ProfileRemoteDataSource
+import de.oliveroehme.campaignfield.ui.session.ProfileViewModel
 import de.oliveroehme.campaignfield.ui.status.LocationAccessState
 
 @Composable
@@ -36,6 +39,7 @@ fun CampaignFieldNavHost(
     contentPadding: PaddingValues,
     profile: UserProfile,
     assignmentRepository: AssignmentRepository,
+    profileRemoteDataSource: ProfileRemoteDataSource,
     syncRepository: SyncRepository,
     mapConfiguration: MapConfiguration,
     locationAccessState: LocationAccessState,
@@ -189,12 +193,30 @@ fun CampaignFieldNavHost(
             )
         }
         composable(AppDestination.Profile.route) {
+            val viewModel: ProfileViewModel = viewModel(
+                factory = ProfileViewModel.factory(profileRemoteDataSource),
+            )
+            val profileState by viewModel.state.collectAsStateWithLifecycle()
+            val teamIds = profile.teams.mapNotNull { it.teamId }
+            LaunchedEffect(teamIds) { viewModel.refresh(teamIds) }
+            LaunchedEffect(profileState.profileRefreshRevision) {
+                if (profileState.profileRefreshRevision > 0) {
+                    onRefreshProfile()
+                    viewModel.consumeProfileRefresh()
+                }
+            }
             ProfileScreen(
                 contentPadding = contentPadding,
                 profile = profile,
+                state = profileState,
                 isRefreshingProfile = isRefreshingProfile,
                 isLoggingOut = isLoggingOut,
-                onRefreshProfile = onRefreshProfile,
+                onRefreshProfile = {
+                    onRefreshProfile()
+                    viewModel.refresh(teamIds)
+                },
+                onAcceptInvitation = { viewModel.respondToInvitation(it, accept = true) },
+                onDeclineInvitation = { viewModel.respondToInvitation(it, accept = false) },
                 onLogout = onLogout,
             )
         }

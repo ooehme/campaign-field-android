@@ -22,6 +22,7 @@ import de.oliveroehme.campaignfield.map.MapConfiguration
 import de.oliveroehme.campaignfield.network.NetworkStateProvider
 import de.oliveroehme.campaignfield.network.CoreApiHealthSource
 import de.oliveroehme.campaignfield.network.CoreApiStatus
+import de.oliveroehme.campaignfield.network.auth.ProfileRemoteDataSource
 import de.oliveroehme.campaignfield.ui.navigation.AppDestination
 import de.oliveroehme.campaignfield.ui.navigation.CampaignFieldBottomBar
 import de.oliveroehme.campaignfield.ui.navigation.CampaignFieldNavHost
@@ -37,6 +38,7 @@ import kotlinx.coroutines.delay
 fun CampaignFieldApp(
     viewModel: SessionViewModel,
     assignmentRepository: AssignmentRepository,
+    profileRemoteDataSource: ProfileRemoteDataSource,
     syncRepository: SyncRepository,
     coreApiHealthSource: CoreApiHealthSource,
     locationSessionState: InMemoryLocationSessionState,
@@ -65,6 +67,7 @@ fun CampaignFieldApp(
             is AuthState.SignedIn -> AuthenticatedApp(
                 state = state,
                 assignmentRepository = assignmentRepository,
+                profileRemoteDataSource = profileRemoteDataSource,
                 syncRepository = syncRepository,
                 coreApiHealthSource = coreApiHealthSource,
                 locationSessionState = locationSessionState,
@@ -81,6 +84,7 @@ fun CampaignFieldApp(
             is AuthState.SigningOut -> AuthenticatedApp(
                 state = AuthState.SignedIn(state.profile),
                 assignmentRepository = assignmentRepository,
+                profileRemoteDataSource = profileRemoteDataSource,
                 syncRepository = syncRepository,
                 coreApiHealthSource = coreApiHealthSource,
                 locationSessionState = locationSessionState,
@@ -102,6 +106,7 @@ fun CampaignFieldApp(
 private fun AuthenticatedApp(
     state: AuthState.SignedIn,
     assignmentRepository: AssignmentRepository,
+    profileRemoteDataSource: ProfileRemoteDataSource,
     syncRepository: SyncRepository,
     coreApiHealthSource: CoreApiHealthSource,
     locationSessionState: InMemoryLocationSessionState,
@@ -155,6 +160,7 @@ private fun AuthenticatedApp(
             contentPadding = innerPadding,
             profile = state.profile,
             assignmentRepository = assignmentRepository,
+            profileRemoteDataSource = profileRemoteDataSource,
             syncRepository = syncRepository,
             mapConfiguration = mapConfiguration,
             locationAccessState = locationAccessState,

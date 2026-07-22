@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,6 +48,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
+import de.oliveroehme.campaignfield.domain.auth.TeamMember
+import de.oliveroehme.campaignfield.domain.auth.TeamMembership
 import de.oliveroehme.campaignfield.ui.components.FieldActionButton
 import de.oliveroehme.campaignfield.ui.components.FieldButtonVariant
 import de.oliveroehme.campaignfield.ui.components.FieldEyebrow
@@ -59,6 +60,8 @@ import de.oliveroehme.campaignfield.ui.components.FieldShape
 import de.oliveroehme.campaignfield.ui.components.FieldStatusPill
 import de.oliveroehme.campaignfield.ui.components.FieldStatusTone
 import de.oliveroehme.campaignfield.ui.session.LoginFeedback
+import de.oliveroehme.campaignfield.ui.session.ProfileUiState
+import de.oliveroehme.campaignfield.ui.session.TeamDetailUiState
 import de.oliveroehme.campaignfield.ui.theme.FieldBlackOverlay
 import de.oliveroehme.campaignfield.ui.theme.FieldBorder
 import de.oliveroehme.campaignfield.ui.theme.FieldCyan
@@ -246,9 +249,12 @@ private fun FieldInput(
 fun ProfileScreen(
     contentPadding: PaddingValues,
     profile: UserProfile,
+    state: ProfileUiState,
     isRefreshingProfile: Boolean,
     isLoggingOut: Boolean,
     onRefreshProfile: () -> Unit,
+    onAcceptInvitation: (String) -> Unit,
+    onDeclineInvitation: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
     Column(
@@ -323,55 +329,11 @@ fun ProfileScreen(
                 }
             } else {
                 profile.teams.forEach { team ->
-                    FieldPanel(
-                        modifier = Modifier.fillMaxWidth(),
-                        borderColor = FieldCyan.copy(alpha = 0.35f),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(FieldCyan.copy(alpha = 0.10f))
-                                    .border(1.dp, FieldCyan.copy(alpha = 0.40f), RoundedCornerShape(8.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = team.teamName.initials("T"),
-                                    color = FieldCyan,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        modifier = Modifier.weight(1f, fill = false),
-                                        text = team.teamName,
-                                        color = FieldWhite,
-                                        style = MaterialTheme.typography.titleMedium,
-                                    )
-                                    if (team.isCurrent) {
-                                        FieldStatusPill(
-                                            modifier = Modifier.padding(start = 8.dp),
-                                            label = "Aktuell",
-                                            tone = FieldStatusTone.Ready,
-                                        )
-                                    }
-                                }
-                                Text(
-                                    modifier = Modifier.padding(top = 4.dp),
-                                    text = team.teamId?.let { "Team #$it" } ?: "Team",
-                                    color = FieldMuted,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            FieldStatusPill(
-                                label = team.role?.formatRole() ?: "Mitglied",
-                                tone = if (team.role.isTeamLeadRole()) FieldStatusTone.Warning else FieldStatusTone.Neutral,
-                            )
-                        }
-                    }
+                    TeamMembershipPanel(
+                        currentUserId = profile.id,
+                        membership = team,
+                        state = team.teamId?.let(state.teams::get),
+                    )
                 }
             }
         }
@@ -386,6 +348,13 @@ fun ProfileScreen(
             onClick = onRefreshProfile,
         )
 
+        TeamInvitationsPanel(
+            state = state,
+            onRetry = onRefreshProfile,
+            onAcceptInvitation = onAcceptInvitation,
+            onDeclineInvitation = onDeclineInvitation,
+        )
+
         FieldActionButton(
             modifier = Modifier.fillMaxWidth(),
             text = if (isLoggingOut) "Logout läuft …" else "Logout",
@@ -395,6 +364,294 @@ fun ProfileScreen(
             variant = FieldButtonVariant.Secondary,
             onClick = onLogout,
         )
+    }
+}
+
+@Composable
+private fun TeamMembershipPanel(
+    currentUserId: String?,
+    membership: TeamMembership,
+    state: TeamDetailUiState?,
+) {
+    val detail = state?.detail
+    val members = detail?.members.orEmpty()
+    val teamName = detail?.name ?: membership.teamName
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FieldShape)
+            .background(FieldPanel)
+            .border(1.dp, FieldCyan.copy(alpha = 0.35f), FieldShape),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(FieldCyan.copy(alpha = 0.04f))
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(FieldCyan.copy(alpha = 0.10f))
+                    .border(1.dp, FieldCyan.copy(alpha = 0.40f), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = teamName.initials("T"),
+                    color = FieldCyan,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        modifier = Modifier.weight(1f, fill = false),
+                        text = teamName,
+                        color = FieldWhite,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (membership.isCurrent) {
+                        FieldStatusPill(
+                            modifier = Modifier.padding(start = 8.dp),
+                            label = "Aktuell",
+                            tone = FieldStatusTone.Ready,
+                        )
+                    }
+                }
+                Text(
+                    modifier = Modifier.padding(top = 4.dp),
+                    text = buildString {
+                        append(membership.teamId?.let { "Team #$it" } ?: "Team")
+                        append("   ")
+                        append(
+                            when {
+                                state?.isLoading == true -> "Mitglieder laden"
+                                members.size == 1 -> "1 Mitglied"
+                                else -> "${members.size} Mitglieder"
+                            },
+                        )
+                    },
+                    color = FieldMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            FieldStatusPill(
+                label = membership.role?.formatRole() ?: "Mitglied",
+                tone = if (membership.role.isTeamLeadRole()) FieldStatusTone.Warning else FieldStatusTone.Neutral,
+            )
+        }
+
+        Box(Modifier.fillMaxWidth().height(1.dp).background(FieldBorder))
+        when {
+            state?.isLoading == true -> Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = FieldCyan,
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    modifier = Modifier.padding(start = 10.dp),
+                    text = "Mitglieder werden geladen …",
+                    color = FieldMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            state?.errorMessage != null -> FieldMessagePanel(
+                modifier = Modifier.padding(16.dp),
+                message = "Mitglieder konnten nicht geladen werden: ${state.errorMessage}",
+                tint = de.oliveroehme.campaignfield.ui.theme.FieldAmber,
+            )
+            members.isEmpty() -> Text(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                text = "Keine Teammitglieder geladen.",
+                color = FieldMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            else -> TeamMembers(currentUserId, members)
+        }
+    }
+}
+
+@Composable
+private fun TeamMembers(currentUserId: String?, members: List<TeamMember>) {
+    val sortedMembers = members.sortedWith(
+        compareByDescending<TeamMember> { it.id == currentUserId }.thenBy { it.name.lowercase() },
+    )
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FieldEyebrow("Mitglieder", letterSpacing = androidx.compose.ui.unit.TextUnit(1.68f, androidx.compose.ui.unit.TextUnitType.Sp))
+            Text(members.size.toString(), color = FieldMuted, style = MaterialTheme.typography.bodySmall)
+        }
+        sortedMembers.forEachIndexed { index, member ->
+            if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(FieldBorder.copy(alpha = 0.70f)))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (member.id == currentUserId) FieldCyan.copy(alpha = 0.04f) else androidx.compose.ui.graphics.Color.Transparent)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(FieldBlackOverlay.copy(alpha = 0.25f))
+                        .border(1.dp, FieldBorder, androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = member.name.initials("U"),
+                        color = FieldCyan,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            modifier = Modifier.weight(1f, fill = false),
+                            text = member.name,
+                            color = FieldWhite,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        if (member.id == currentUserId) {
+                            FieldStatusPill(
+                                modifier = Modifier.padding(start = 8.dp),
+                                label = "Du",
+                                tone = FieldStatusTone.Neutral,
+                            )
+                        }
+                    }
+                    member.email?.let {
+                        Text(text = it, color = FieldMuted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                FieldStatusPill(
+                    label = member.role?.formatRole() ?: "Mitglied",
+                    tone = if (member.role.isTeamLeadRole()) FieldStatusTone.Warning else FieldStatusTone.Neutral,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamInvitationsPanel(
+    state: ProfileUiState,
+    onRetry: () -> Unit,
+    onAcceptInvitation: (String) -> Unit,
+    onDeclineInvitation: (String) -> Unit,
+) {
+    FieldPanel(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            FieldEyebrow("Team-Einladungen", letterSpacing = androidx.compose.ui.unit.TextUnit(1.96f, androidx.compose.ui.unit.TextUnitType.Sp))
+            FieldStatusPill(
+                label = if (state.invitationsLoading) "Lädt" else state.invitations.size.toString(),
+                tone = if (state.invitations.isEmpty()) FieldStatusTone.Neutral else FieldStatusTone.Warning,
+            )
+        }
+        when {
+            state.invitationsLoading -> Row(
+                modifier = Modifier.padding(top = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(Modifier.size(18.dp), color = FieldCyan, strokeWidth = 2.dp)
+                Text(
+                    modifier = Modifier.padding(start = 10.dp),
+                    text = "Einladungen werden geladen …",
+                    color = FieldMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            state.invitationsError != null -> {
+                FieldMessagePanel(
+                    modifier = Modifier.padding(top = 16.dp),
+                    message = state.invitationsError,
+                    tint = FieldRed,
+                )
+                FieldActionButton(
+                    modifier = Modifier.padding(top = 12.dp),
+                    text = "Erneut laden",
+                    variant = FieldButtonVariant.Danger,
+                    onClick = onRetry,
+                )
+            }
+            state.invitations.isEmpty() -> Text(
+                modifier = Modifier.padding(top = 16.dp),
+                text = "Keine offenen Einladungen.",
+                color = FieldMuted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            else -> state.invitations.forEach { invitation ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .clip(FieldShape)
+                        .background(FieldBlackOverlay.copy(alpha = 0.20f))
+                        .border(1.dp, FieldBorder, FieldShape)
+                        .padding(12.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        Column(Modifier.weight(1f)) {
+                            Text(invitation.teamName, color = FieldWhite, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                modifier = Modifier.padding(top = 4.dp),
+                                text = invitation.role?.formatRole() ?: "Mitglied",
+                                color = FieldMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        FieldStatusPill(
+                            label = invitation.status?.formatRole() ?: "Offen",
+                            tone = FieldStatusTone.Warning,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val isAccepting = state.invitationActionId == invitation.id &&
+                            state.invitationActionAccept == true
+                        val isDeclining = state.invitationActionId == invitation.id &&
+                            state.invitationActionAccept == false
+                        FieldActionButton(
+                            modifier = Modifier.weight(1f),
+                            text = "Annehmen",
+                            isLoading = isAccepting,
+                            enabled = state.invitationActionId == null,
+                            onClick = { onAcceptInvitation(invitation.id) },
+                        )
+                        FieldActionButton(
+                            modifier = Modifier.weight(1f),
+                            text = "Ablehnen",
+                            isLoading = isDeclining,
+                            enabled = state.invitationActionId == null,
+                            variant = FieldButtonVariant.Secondary,
+                            onClick = { onDeclineInvitation(invitation.id) },
+                        )
+                    }
+                }
+            }
+        }
+        state.invitationActionError?.let {
+            FieldMessagePanel(modifier = Modifier.padding(top = 12.dp), message = it, tint = FieldRed)
+        }
     }
 }
 

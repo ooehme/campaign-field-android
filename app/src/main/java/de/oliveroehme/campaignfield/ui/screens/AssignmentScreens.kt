@@ -2,6 +2,7 @@ package de.oliveroehme.campaignfield.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,8 +35,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
+import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
+import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.domain.SyncQueueItem
 import de.oliveroehme.campaignfield.domain.SyncQueueStatus
 import de.oliveroehme.campaignfield.domain.availableStatusActions
@@ -338,6 +341,9 @@ fun AssignmentDetailScreen(
             cachedAtEpochMillis = state.cachedAtEpochMillis,
             isChangingStatus = state.isChangingStatus,
             statusMessage = state.statusMessage,
+            mapData = state.mapData,
+            isMapDataLoading = state.isMapDataLoading,
+            mapDataErrorMessage = state.mapDataErrorMessage,
             onChangeStatus = onChangeStatus,
             onOpenMap = onOpenMap,
             onOpenProof = onOpenProof,
@@ -357,6 +363,9 @@ private fun AssignmentDetailContent(
     cachedAtEpochMillis: Long?,
     isChangingStatus: Boolean,
     statusMessage: String?,
+    mapData: AssignmentMapData?,
+    isMapDataLoading: Boolean,
+    mapDataErrorMessage: String?,
     onChangeStatus: (AssignmentStatus) -> Unit,
     onOpenMap: () -> Unit,
     onOpenProof: () -> Unit,
@@ -476,6 +485,14 @@ private fun AssignmentDetailContent(
             )
         }
 
+        AssignmentOperationalSummary(
+            type = assignment.type,
+            data = mapData,
+            isLoading = isMapDataLoading,
+            errorMessage = mapDataErrorMessage,
+            onOpenMap = onOpenMap,
+        )
+
         DetailPanel(title = "Status") {
             val actions = detail.availableStatusActions()
             if (actions.isEmpty()) {
@@ -510,6 +527,68 @@ private fun AssignmentDetailContent(
             variant = FieldButtonVariant.Secondary,
             onClick = onOpenSync,
         )
+    }
+}
+
+@Composable
+private fun AssignmentOperationalSummary(
+    type: AssignmentType,
+    data: AssignmentMapData?,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onOpenMap: () -> Unit,
+) {
+    val presentation = when (type) {
+        AssignmentType.LETTERBOX_DISTRIBUTION ->
+            Triple("Gebäude", data?.buildingCount ?: 0, "Briefkastenverteilung pro Adresse erfassen.")
+        AssignmentType.POSTER_FREE,
+        AssignmentType.POSTER_GUIDED,
+        -> Triple("Poster", data?.posterCount ?: 0, "Posterstandorte auf der Karte bearbeiten.")
+        else -> return
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(FieldShape)
+            .background(FieldPanel)
+            .border(1.dp, FieldBorder, FieldShape)
+            .clickable(onClick = onOpenMap)
+            .padding(16.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                modifier = Modifier.size(16.dp),
+                imageVector = FieldIcons.ArrowRight,
+                contentDescription = null,
+                tint = FieldCyan,
+            )
+            FieldEyebrow(
+                modifier = Modifier.weight(1f).padding(start = 8.dp),
+                text = presentation.first,
+                letterSpacing = androidx.compose.ui.unit.TextUnit(1.96f, androidx.compose.ui.unit.TextUnitType.Sp),
+            )
+            FieldStatusPill(
+                label = if (isLoading) "Lädt" else presentation.second.toString(),
+                tone = if (isLoading) FieldStatusTone.Neutral else FieldStatusTone.Active,
+            )
+        }
+        Text(
+            modifier = Modifier.padding(top = 10.dp),
+            text = presentation.third,
+            color = FieldMuted,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        errorMessage?.let {
+            Text(
+                modifier = Modifier.padding(top = 8.dp),
+                text = it,
+                color = FieldAmber,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 package de.oliveroehme.campaignfield.network.assignment
 
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
+import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import de.oliveroehme.campaignfield.network.auth.PersistentCookieJar
 import de.oliveroehme.campaignfield.network.auth.SanctumHttpClient
@@ -104,6 +105,28 @@ class AssignmentHttpClientTest {
         assertEquals("PATCH", request.method)
         assertEquals("/api/assignments/9", request.path)
         assertEquals("""{"status":"paused"}""", request.body.readUtf8())
+    }
+
+    @Test
+    fun `loads all building pages for letterbox map`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"data":[{"id":1,"geometry":{"type":"Point","coordinates":[12,50]}}],"current_page":1,"last_page":2,"total":101}""",
+            ),
+        )
+        server.enqueue(
+            jsonResponse(
+                """{"data":[{"id":2,"geometry":{"type":"Point","coordinates":[13,51]}}],"current_page":2,"last_page":2,"total":101}""",
+            ),
+        )
+
+        val result = client.loadAssignmentMapData("8", AssignmentType.LETTERBOX_DISTRIBUTION)
+
+        val data = (result as AssignmentResult.Success).value
+        assertEquals(101, data.buildingCount)
+        assertEquals(2, data.features.size)
+        assertEquals("/api/assignments/8/buildings?per_page=100&page=1", server.takeRequest().path)
+        assertEquals("/api/assignments/8/buildings?per_page=100&page=2", server.takeRequest().path)
     }
 
     @Test

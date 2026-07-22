@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
+import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
@@ -93,6 +94,9 @@ data class AssignmentDetailUiState(
     val cachedAtEpochMillis: Long? = null,
     val isChangingStatus: Boolean = false,
     val statusMessage: String? = null,
+    val mapData: AssignmentMapData? = null,
+    val isMapDataLoading: Boolean = false,
+    val mapDataErrorMessage: String? = null,
 )
 
 data class ScannerUiState(
@@ -179,7 +183,24 @@ class AssignmentDetailViewModel(
                     assignment = result.value,
                     isUsingCachedData = result.source == AssignmentDataSource.LOCAL_CACHE,
                     cachedAtEpochMillis = result.cachedAtEpochMillis,
-                )
+                    isMapDataLoading = true,
+                ).also {
+                    when (val mapResult = repository.loadAssignmentMapData(result.value)) {
+                        is AssignmentResult.Success -> mutableState.update { current ->
+                            current.copy(
+                                mapData = mapResult.value,
+                                isMapDataLoading = false,
+                                mapDataErrorMessage = null,
+                            )
+                        }
+                        is AssignmentResult.Failure -> mutableState.update { current ->
+                            current.copy(
+                                isMapDataLoading = false,
+                                mapDataErrorMessage = mapResult.failure.userMessage,
+                            )
+                        }
+                    }
+                }
                 is AssignmentResult.Failure -> mutableState.update {
                     it.copy(isLoading = false, errorMessage = result.failure.userMessage)
                 }

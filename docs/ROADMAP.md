@@ -94,7 +94,9 @@ offline fehl; sensible Daten bleiben in Caches oder temporären Dateien.
 der Referenz die maßgeblichen Profildetails und Teamzugehörigkeiten. Direkte und
 `{data: ...}`-Antworten sowie mehrere Team-/Rollenformen werden defensiv gelesen; fehlende
 `can`-Flags bleiben `false`. Offen sind das kanonische `/user`-Schema, serverseitige
-Sessioninvalidierung bei Offline-Logout und der Einladungsscope.
+Sessioninvalidierung bei Offline-Logout und das endgültige Einladungsschema. Die Profilansicht
+lädt Teammitglieder und offene Einladungen über die Referenzendpunkte; Einladungen können
+angenommen oder abgelehnt werden.
 
 ## 4. Assignment-Liste und Assignment-Details
 
@@ -175,6 +177,9 @@ Zielgebiet und Standort auf einem lokalen Leer-Stil. Teamstandorte folgen erst m
 Frequenz-, Zustimmungs- und Berechtigungsvertrag.
 
 ## 6. Assignment Buildings und Poster-Standorte
+
+**Teilstatus:** Read-only Pagination, Objektzahlen und Geometrien für die Detail- und
+Auftragskarte sind umgesetzt. Statusaktionen, Listenbearbeitung und Offline-Overlays folgen.
 
 **Ziel:** Operative Objekte listen, auf der Karte darstellen und berechtigt bearbeiten.
 

@@ -1,9 +1,12 @@
 package de.oliveroehme.campaignfield.network.assignment
 
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
+import de.oliveroehme.campaignfield.domain.AssignmentMapData
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
+import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.domain.AreaSummary
 import de.oliveroehme.campaignfield.domain.TeamSummary
 import de.oliveroehme.campaignfield.map.FieldGeoJson
@@ -28,6 +31,11 @@ interface AssignmentRemoteDataSource {
 
     suspend fun loadAssignment(id: String): AssignmentResult<AssignmentDetail>
 
+    suspend fun loadAssignmentMapData(
+        id: String,
+        type: AssignmentType,
+    ): AssignmentResult<AssignmentMapData> = AssignmentResult.Success(AssignmentMapData())
+
     suspend fun updateAssignmentStatus(
         id: String,
         status: AssignmentStatus,
@@ -41,6 +49,7 @@ class AssignmentHttpClient internal constructor(
     private val httpClient: OkHttpClient,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val parser: AssignmentParser = AssignmentParser(),
+    private val mapDataParser: AssignmentMapDataParser = AssignmentMapDataParser(),
 ) : AssignmentRemoteDataSource {
     override suspend fun loadAssignments(
         userId: String?,
@@ -97,6 +106,45 @@ class AssignmentHttpClient internal constructor(
                 RawResponse.TransportFailure -> AssignmentResult.Failure(AssignmentFailure.network())
             }
         }
+
+    override suspend fun loadAssignmentMapData(
+        id: String,
+        type: AssignmentType,
+    ): AssignmentResult<AssignmentMapData> = withContext(ioDispatcher) {
+        val buildings = if (type == AssignmentType.LETTERBOX_DISTRIBUTION) {
+            when (
+                val result = loadFeaturePages(
+                    pathSegments = listOf("assignments", id, "buildings"),
+                    parse = mapDataParser::parseBuildings,
+                )
+            ) {
+                is AssignmentResult.Success -> result.value
+                is AssignmentResult.Failure -> return@withContext result
+            }
+        } else {
+            FeatureCollectionResult.EMPTY
+        }
+        val posters = if (type == AssignmentType.POSTER_FREE || type == AssignmentType.POSTER_GUIDED) {
+            when (
+                val result = loadFeaturePages(
+                    pathSegments = listOf("assignments", id, "poster-locations"),
+                    parse = mapDataParser::parsePosters,
+                )
+            ) {
+                is AssignmentResult.Success -> result.value
+                is AssignmentResult.Failure -> return@withContext result
+            }
+        } else {
+            FeatureCollectionResult.EMPTY
+        }
+        AssignmentResult.Success(
+            AssignmentMapData(
+                buildingCount = buildings.total,
+                posterCount = posters.total,
+                features = buildings.features + posters.features,
+            ),
+        )
+    }
 
     private fun enrichTargetArea(detail: AssignmentDetail): AssignmentDetail {
         val original = detail.summary.area ?: return detail
@@ -208,6 +256,50 @@ class AssignmentHttpClient internal constructor(
         )
     }
 
+    private fun loadFeaturePages(
+        pathSegments: List<String>,
+        parse: (String) -> AssignmentMapFeaturePage,
+    ): AssignmentResult<FeatureCollectionResult> {
+        val features = mutableListOf<AssignmentMapFeature>()
+        var requestedPage = 1
+        var lastPage = 1
+        var total = 0
+        do {
+            val url = configuration.apiEndpointSegments(*pathSegments.toTypedArray())
+                .newBuilder()
+                .addQueryParameter("per_page", PAGE_SIZE.toString())
+                .addQueryParameter("page", requestedPage.toString())
+                .build()
+            when (val response = execute(url)) {
+                is RawResponse.Success -> {
+                    val page = runCatching { parse(response.body) }.getOrElse {
+                        return AssignmentResult.Failure(AssignmentFailure.invalidResponse())
+                    }
+                    if (page.currentPage != requestedPage) {
+                        return AssignmentResult.Failure(AssignmentFailure.invalidResponse())
+                    }
+                    lastPage = page.lastPage
+                    if (lastPage > MAX_PAGES) {
+                        return AssignmentResult.Failure(AssignmentFailure.invalidResponse())
+                    }
+                    total = maxOf(total, page.total)
+                    features += page.features
+                }
+                is RawResponse.HttpFailure -> return AssignmentResult.Failure(
+                    AssignmentFailure.fromHttp(response.status, detailRequest = true),
+                )
+                RawResponse.TransportFailure -> return AssignmentResult.Failure(AssignmentFailure.network())
+            }
+            requestedPage++
+        } while (requestedPage <= lastPage)
+        return AssignmentResult.Success(
+            FeatureCollectionResult(
+                total = maxOf(total, features.size),
+                features = features.distinctBy { "${it.kind}:${it.id}" },
+            ),
+        )
+    }
+
     private fun execute(url: HttpUrl): RawResponse = execute(Request.Builder().url(url).get().build())
 
     private fun execute(request: Request): RawResponse = try {
@@ -245,6 +337,15 @@ class AssignmentHttpClient internal constructor(
         data class Success(val body: String) : RawResponse
         data class HttpFailure(val status: Int) : RawResponse
         data object TransportFailure : RawResponse
+    }
+
+    private data class FeatureCollectionResult(
+        val total: Int,
+        val features: List<AssignmentMapFeature>,
+    ) {
+        companion object {
+            val EMPTY = FeatureCollectionResult(0, emptyList())
+        }
     }
 
     private companion object {

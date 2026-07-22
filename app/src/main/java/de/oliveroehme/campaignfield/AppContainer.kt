@@ -23,6 +23,8 @@ import de.oliveroehme.campaignfield.network.CoreApiHealthSource
 import de.oliveroehme.campaignfield.network.AndroidNetworkStateProvider
 import de.oliveroehme.campaignfield.network.auth.AndroidEncryptedCookiePersistence
 import de.oliveroehme.campaignfield.network.auth.PersistentCookieJar
+import de.oliveroehme.campaignfield.network.auth.ProfileHttpClient
+import de.oliveroehme.campaignfield.network.auth.ProfileRemoteDataSource
 import de.oliveroehme.campaignfield.network.auth.SanctumHttpClient
 import de.oliveroehme.campaignfield.network.auth.SanctumSessionClient
 import de.oliveroehme.campaignfield.network.assignment.AssignmentHttpClient
@@ -31,6 +33,7 @@ import de.oliveroehme.campaignfield.sync.WorkManagerSyncScheduler
 
 class AppContainer(context: Context) {
     val sessionRepository: SessionRepository
+    val profileRemoteDataSource: ProfileRemoteDataSource
     val assignmentRepository: AssignmentRepository
     val syncRepository: SyncRepository
     val assignmentSyncEngine: AssignmentSyncEngine
@@ -78,6 +81,7 @@ class AppContainer(context: Context) {
             cleaner = cleaner,
             unauthorizedHandler = unauthorizedHandler,
         )
+        profileRemoteDataSource = ProfileHttpClient(configuration, httpClient)
         val assignmentRemote = AssignmentHttpClient(configuration, httpClient)
         assignmentSyncEngine = AssignmentSyncEngine(assignmentRemote, offlineStore)
         syncRepository = SyncRepository(offlineStore, syncScheduler)

@@ -16,12 +16,13 @@ Liste, Details, Statusaktionen, Offline-Synchronisierung und die operative MapLi
 
 ## Stand
 
-Enthalten sind Login, Session-Wiederherstellung, Profil/Teams, Logout, zentraler
+Enthalten sind Login, Session-Wiederherstellung, Profil mit Teammitgliedern und
+Einladungen, Logout, zentraler
 401-Cleanup, die App-Shell mit echtem API-/Standortstatus sowie Assignment-Liste und
 Assignment-Details mit Pagination, Referenzsortierung und Teamabgleich. Assignment-Daten
 werden in Room gespeichert; Statusänderungen bleiben bei Netzausfall in einer persistenten,
 sichtbaren Queue und werden per WorkManager nach Wiederverbindung synchronisiert. Die
-Assignment-Karte zeigt Zielgebiete, optionalen Live-Standort und Geräte-Bearing; bei
+Assignment-Karte zeigt Zielgebiete, Gebäude/Poster, optionalen Live-Standort und Geräte-Bearing; bei
 Basemapfehlern bleibt sie mit lokalem Leer-Stil nutzbar. Der technische Sanctum-Nachweis
 steht in [SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt Phase 6 der
 [Roadmap](docs/ROADMAP.md).

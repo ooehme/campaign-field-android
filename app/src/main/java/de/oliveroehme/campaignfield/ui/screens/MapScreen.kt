@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
+import de.oliveroehme.campaignfield.domain.toGeoJson
 import de.oliveroehme.campaignfield.location.CompassSource
 import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
 import de.oliveroehme.campaignfield.location.LocationSource
@@ -373,6 +374,7 @@ private fun ScannerMapFace(
             theme = theme,
             configuration = configuration,
             areaGeoJson = areaGeoJson,
+            featureGeoJson = null,
             areaCenter = areaCenter,
             currentLocation = lastLocation,
             bearing = bearing,
@@ -617,6 +619,7 @@ private fun AssignmentMapFace(
             FieldGeoJson.distanceMeters(areaGeoJson, MapCoordinate(it.latitude, it.longitude))
         }
     }
+    val featureGeoJson = remember(detailState.mapData) { detailState.mapData?.toGeoJson() }
 
     Column(
         modifier = Modifier
@@ -643,7 +646,7 @@ private fun AssignmentMapFace(
                     modifier = Modifier.padding(top = 8.dp),
                     text = assignment.title,
                     color = FieldWhite,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
@@ -686,6 +689,7 @@ private fun AssignmentMapFace(
                 theme = ScannerMapTheme.DEFAULT,
                 configuration = configuration,
                 areaGeoJson = areaGeoJson,
+                featureGeoJson = featureGeoJson,
                 areaCenter = areaCenter,
                 currentLocation = lastLocation,
                 bearing = bearing,
@@ -721,8 +725,16 @@ private fun AssignmentMapFace(
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MapMetric(Modifier.weight(1f), "Gebäude", "0")
-            MapMetric(Modifier.weight(1f), "Poster", "0")
+            MapMetric(
+                Modifier.weight(1f),
+                "Gebäude",
+                if (detailState.isMapDataLoading) "…" else (detailState.mapData?.buildingCount ?: 0).toString(),
+            )
+            MapMetric(
+                Modifier.weight(1f),
+                "Poster",
+                if (detailState.isMapDataLoading) "…" else (detailState.mapData?.posterCount ?: 0).toString(),
+            )
             MapMetric(
                 Modifier.weight(1f),
                 "Ziel",
@@ -768,6 +780,7 @@ private fun AssignmentMapFace(
             )
             else -> MapNotice("Standort wird erst nach deiner Aktion abgefragt.", FieldMuted)
         }
+        detailState.mapDataErrorMessage?.let { MapNotice(it, FieldAmber) }
         if (isOnline && basemapState == BasemapState.UNAVAILABLE) {
             FieldActionButton(
                 text = "Neu laden",

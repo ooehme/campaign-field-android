@@ -3,6 +3,7 @@ package de.oliveroehme.campaignfield.data.assignment
 import de.oliveroehme.campaignfield.data.Repository
 import de.oliveroehme.campaignfield.database.OfflineStore
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
+import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
@@ -30,6 +31,9 @@ data class AssignmentStatusChange(
 interface AssignmentRepository : Repository {
     suspend fun loadAssignments(profile: UserProfile): AssignmentResult<AssignmentPage>
     suspend fun loadAssignment(id: String): AssignmentResult<AssignmentDetail>
+    suspend fun loadAssignmentMapData(
+        assignment: AssignmentDetail,
+    ): AssignmentResult<AssignmentMapData> = AssignmentResult.Success(AssignmentMapData())
     suspend fun warmAssignments(ids: List<String>)
     suspend fun changeStatus(
         assignment: AssignmentDetail,
@@ -96,6 +100,13 @@ class DefaultAssignmentRepository(
             }
         }
     }
+
+    override suspend fun loadAssignmentMapData(
+        assignment: AssignmentDetail,
+    ): AssignmentResult<AssignmentMapData> = remote.loadAssignmentMapData(
+        id = assignment.summary.id,
+        type = assignment.summary.type,
+    )
 
     override suspend fun warmAssignments(ids: List<String>) {
         if (offlineStore == null || !networkStateProvider.isOnline()) return

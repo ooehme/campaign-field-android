@@ -15,8 +15,8 @@ React-Komponenten übernommen; maßgeblich sind Fachlogik, API-Verträge und UX-
 | `/scanner` | aktive Assignments, Live-Position, Kompass, Gebäude-/Poster-Schnellaktion | Scanner/Karte, Phasen 5–6 |
 | `/assignments/:id/proof` | nur Platzhalter „lokal geplant“ | Nachweise, Phase 8 |
 | `/sync` | Queue-Zähler, manuelles Sync, Fehlerdetails, Retry | Sync, Phase 7 |
-| `/profile` | Benutzer, Rollenanzeige, Teams/Mitglieder, Einladungen, Logout | Profil, Phase 3; Einladungen später |
-| `/invitations` | offene Einladungen annehmen/ablehnen | nach MVP prüfen |
+| `/profile` | Benutzer, Rollenanzeige, Teams/Mitglieder, Einladungen, Logout | Profil, Phase 3 |
+| `/invitations` | offene Einladungen annehmen/ablehnen | Profil, Phase 3 |
 
 Die Referenz unterstützt Assignment-Typen `standard`, `letterbox_distribution`,
 `poster_free`, `poster_guided`, `campaign_booth` und Status `draft`, `ready`, `active`,

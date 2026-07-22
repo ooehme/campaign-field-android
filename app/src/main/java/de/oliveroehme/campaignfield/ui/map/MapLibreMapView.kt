@@ -111,6 +111,7 @@ fun MapLibreMapView(
     theme: ScannerMapTheme,
     configuration: MapConfiguration,
     areaGeoJson: String?,
+    featureGeoJson: String?,
     areaCenter: MapCoordinate?,
     currentLocation: LocationSample?,
     bearing: Double?,
@@ -163,11 +164,19 @@ fun MapLibreMapView(
         }
     }
 
-    LaunchedEffect(loadedStyle, areaGeoJson, currentLocation, bearing, theme, useBaseBuildingExtrusions) {
+    LaunchedEffect(
+        loadedStyle,
+        areaGeoJson,
+        featureGeoJson,
+        currentLocation,
+        bearing,
+        theme,
+        useBaseBuildingExtrusions,
+    ) {
         val style = loadedStyle ?: return@LaunchedEffect
         applyFieldBasemapStyle(style, theme)
         syncBaseBuildingExtrusions(style, theme, useBaseBuildingExtrusions)
-        updateSourcesAndLayers(style, areaGeoJson, currentLocation, bearing, theme)
+        updateSourcesAndLayers(style, areaGeoJson, featureGeoJson, currentLocation, bearing, theme)
     }
 
     LaunchedEffect(map, loadedStyle, areaGeoJson, areaCenter, currentLocation, mode) {
@@ -176,8 +185,8 @@ fun MapLibreMapView(
         mapView.post {
             initializeCamera(
                 map = readyMap,
-                mapView = mapView,
                 mode = mode,
+                configuration = configuration,
                 positions = FieldGeoJson.positions(areaGeoJson),
                 areaCenter = areaCenter,
                 currentLocation = currentLocation,
@@ -197,8 +206,7 @@ fun MapLibreMapView(
                 CameraPosition.Builder(previous)
                     .target(LatLng(location.latitude, location.longitude))
                     .bearing(bearing ?: previous.bearing)
-                    .tilt(LIVE_SCANNER_PITCH)
-                    .padding(0.0, mapView.height / 3.0, 0.0, 0.0)
+                    .tilt(configuration.initialPitch)
                     .build(),
             ),
             CAMERA_ANIMATION_MS,
@@ -351,6 +359,7 @@ private fun dp(mapView: MapView, value: Int): Int =
 private fun updateSourcesAndLayers(
     style: Style,
     areaGeoJson: String?,
+    featureGeoJson: String?,
     currentLocation: LocationSample?,
     bearing: Double?,
     theme: ScannerMapTheme,
@@ -374,6 +383,9 @@ private fun updateSourcesAndLayers(
     }
 
     ensureFeatureLayers(style)
+    val featuresJson = featureGeoJson ?: EMPTY_FEATURE_COLLECTION
+    style.getSourceAs<GeoJsonSource>(FEATURE_GEOMETRIES_SOURCE_ID)?.setGeoJson(featuresJson)
+    style.getSourceAs<GeoJsonSource>(FEATURE_MARKERS_SOURCE_ID)?.setGeoJson(featuresJson)
 
     val radiusJson = currentLocation?.let(::actionRadiusGeoJson) ?: EMPTY_FEATURE_COLLECTION
     val radiusSource = style.getSourceAs<GeoJsonSource>(LOCATION_RADIUS_SOURCE_ID)
@@ -463,6 +475,17 @@ private fun ensureFeatureLayers(style: Style) {
                     fillExtrusionHeight(Expression.get("extrusionHeight")),
                     fillExtrusionOpacity(1f),
                     fillExtrusionVerticalGradient(true),
+                ),
+        )
+    }
+    if (style.getLayer(FEATURE_BUILDING_OUTLINE_LAYER_ID) == null) {
+        style.addLayer(
+            LineLayer(FEATURE_BUILDING_OUTLINE_LAYER_ID, FEATURE_GEOMETRIES_SOURCE_ID)
+                .withFilter(Expression.raw("[\"==\",[\"get\",\"kind\"],\"building\"]"))
+                .withProperties(
+                    lineColor(color("#4DA3FF")),
+                    lineOpacity(0.88f),
+                    lineWidth(1f),
                 ),
         )
     }
@@ -717,8 +740,8 @@ private fun FillExtrusionLayer.applyBuildingExtrusionTheme(theme: ScannerMapThem
 
 private fun initializeCamera(
     map: MapLibreMap,
-    mapView: MapView,
     mode: FieldMapMode,
+    configuration: MapConfiguration,
     positions: List<MapCoordinate>,
     areaCenter: MapCoordinate?,
     currentLocation: LocationSample?,
@@ -733,10 +756,9 @@ private fun initializeCamera(
             CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder()
                     .target(LatLng(target.latitude, target.longitude))
-                    .zoom(LIVE_SCANNER_ZOOM)
-                    .tilt(LIVE_SCANNER_PITCH)
-                    .bearing(bearing ?: 0.0)
-                    .padding(0.0, mapView.height / 3.0, 0.0, 0.0)
+                    .zoom(configuration.initialZoom)
+                    .tilt(configuration.initialPitch)
+                    .bearing(bearing ?: configuration.fallbackBearing)
                     .build(),
             ),
         )
@@ -972,6 +994,7 @@ private const val FEATURE_GEOMETRIES_SOURCE_ID = "field-feature-geometries"
 private const val FEATURE_MARKERS_SOURCE_ID = "field-feature-markers"
 private const val FEATURE_FILL_LAYER_ID = "field-feature-fill"
 private const val FEATURE_BUILDING_LAYER_ID = "field-feature-building-extrusion"
+private const val FEATURE_BUILDING_OUTLINE_LAYER_ID = "field-feature-building-outline"
 private const val FEATURE_BOOTH_AREA_LAYER_ID = "field-feature-booth-area-line"
 private const val FEATURE_LINE_LAYER_ID = "field-feature-line"
 private const val FEATURE_GEOMETRY_POINT_LAYER_ID = "field-feature-geometry-point"
@@ -992,10 +1015,8 @@ private const val ASSIGNMENT_SNAP_BACK_MS = 500
 private const val MAX_FIT_ZOOM = 17.0
 private const val ASSIGNMENT_MAX_ZOOM = 19.0
 private const val ASSIGNMENT_DEFAULT_ZOOM = 14.0
-private const val LIVE_SCANNER_ZOOM = 17.0
 private const val LIVE_MIN_ZOOM = 16.0
 private const val LIVE_MAX_ZOOM = 18.0
-private const val LIVE_SCANNER_PITCH = 20.0
 private const val ACTION_RADIUS_METERS = 10.0
 private const val ACTION_RADIUS_SEGMENTS = 64
 private const val EARTH_RADIUS_METERS = 6_371_008.8
