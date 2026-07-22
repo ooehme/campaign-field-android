@@ -1,6 +1,8 @@
 package de.oliveroehme.campaignfield
 
 import android.content.Context
+import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
+import de.oliveroehme.campaignfield.data.assignment.DefaultAssignmentRepository
 import de.oliveroehme.campaignfield.data.auth.AndroidLocalSessionCleaner
 import de.oliveroehme.campaignfield.data.auth.AndroidUserProfileStore
 import de.oliveroehme.campaignfield.data.auth.SessionRepository
@@ -11,9 +13,11 @@ import de.oliveroehme.campaignfield.network.auth.AndroidEncryptedCookiePersisten
 import de.oliveroehme.campaignfield.network.auth.PersistentCookieJar
 import de.oliveroehme.campaignfield.network.auth.SanctumHttpClient
 import de.oliveroehme.campaignfield.network.auth.SanctumSessionClient
+import de.oliveroehme.campaignfield.network.assignment.AssignmentHttpClient
 
 class AppContainer(context: Context) {
     val sessionRepository: SessionRepository
+    val assignmentRepository: AssignmentRepository
 
     init {
         val applicationContext = context.applicationContext
@@ -40,6 +44,9 @@ class AppContainer(context: Context) {
             profileStore = profileStore,
             cleaner = cleaner,
             unauthorizedHandler = unauthorizedHandler,
+        )
+        assignmentRepository = DefaultAssignmentRepository(
+            AssignmentHttpClient(configuration, httpClient),
         )
     }
 }

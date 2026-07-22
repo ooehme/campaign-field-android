@@ -14,13 +14,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun AssignmentsScreen(contentPadding: PaddingValues) = PlaceholderScreen(
-    title = "Aufträge",
-    message = "Assignment-Liste und Details folgen in Roadmap-Phase 4.",
-    contentPadding = contentPadding,
-)
-
-@Composable
 fun MapScreen(contentPadding: PaddingValues) = PlaceholderScreen(
     title = "Karte",
     message = "MapLibre und LocationManager folgen in Roadmap-Phase 5.",

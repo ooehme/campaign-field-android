@@ -19,6 +19,10 @@ class ApiConfiguration private constructor(
         .addPathSegments(path.trim('/'))
         .build()
 
+    fun apiEndpointSegments(vararg segments: String): HttpUrl = apiBaseUrl.newBuilder()
+        .apply { segments.forEach(::addPathSegment) }
+        .build()
+
     fun originEndpoint(path: String): HttpUrl = originUrl.newBuilder()
         .addPathSegments(path.trim('/'))
         .build()

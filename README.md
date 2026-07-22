@@ -2,7 +2,8 @@
 
 Native Android-Neuimplementierung der operativen Field-App für `campaign-core`.
 Das Repository enthält ein verifizierbares Projektgerüst, den abgeschlossenen
-Sanctum-Cookie-/CSRF-Spike und den produktiven Login-/Session-Lifecycle.
+Sanctum-Cookie-/CSRF-Spike, den produktiven Login-/Session-Lifecycle sowie die read-only
+Assignment-Liste und -Details.
 
 ## Leitplanken
 
@@ -16,9 +17,10 @@ Sanctum-Cookie-/CSRF-Spike und den produktiven Login-/Session-Lifecycle.
 ## Stand
 
 Enthalten sind Login, Session-Wiederherstellung, Profil/Teams, Logout, zentraler
-401-Cleanup und die App-Shell. Der technische Sanctum-Nachweis steht in
-[SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt die read-only
-Assignment-Liste aus Phase 4 der [Roadmap](docs/ROADMAP.md).
+401-Cleanup, die App-Shell sowie Assignment-Liste und -Details mit Pagination,
+Referenzsortierung und Teamfilter. Der technische Sanctum-Nachweis steht in
+[SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt die MapLibre-Karte aus
+Phase 5 der [Roadmap](docs/ROADMAP.md).
 
 Die Analyse der PWA-Referenz ist in [API-MAPPING.md](docs/API-MAPPING.md) dokumentiert.
 Architektur und Sicherheitskonzept stehen in [ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -27,6 +29,7 @@ und [SECURITY.md](docs/SECURITY.md).
 ## Lokaler Build
 
 Voraussetzungen: JDK 17 oder neuer sowie Android SDK Platform 36 und Build Tools 36.0.0.
+Der Wrapper verwendet Gradle 9.6.1.
 
 ```bash
 ./gradlew test

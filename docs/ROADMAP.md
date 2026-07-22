@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: Phasen 1 bis 3 abgeschlossen; Assignment-Funktionen beginnen mit Phase 4.
+Status: Phasen 1 bis 4 abgeschlossen; Karten- und Standortfunktionen beginnen mit Phase 5.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -95,6 +95,10 @@ werden defensiv gelesen; fehlende `can`-Flags bleiben `false`. Offen sind das ka
 
 ## 4. Assignment-Liste und Assignment-Details
 
+**Status:** Abgeschlossen am 22.07.2026; read-only Liste, Detail, Pagination,
+User-/Team-Fallbacks, Referenzsortierung, Teamfilter und strikte `can`-Abbildung sind
+implementiert und durch Unit-/MockWebServer-Tests abgedeckt.
+
 **Ziel:** Relevante Assignments und Briefings read-only anzeigen; Statusänderungen nur nach Vertrag.
 
 **Arbeitspakete**
@@ -119,6 +123,10 @@ werden defensiv gelesen; fehlende `can`-Flags bleiben `false`. Offen sind das ka
 
 **Offene Backend-Fragen:** primärer Listenendpunkt und Filter; vollständige Statusmatrix;
 Semantik `draft`/`ready`; Zielgebiets-Exklusivität; ETag/`updated_at`/Pagination.
+
+**Ergebnis/Restpunkte:** Direkte, `{data: ...}`- und Laravel-Pagination-Antworten werden
+defensiv gelesen; unbekannte Typen/Status bleiben darstellbar. Statusmutationen bleiben bis
+zur verbindlichen Übergangs- und `can`-Matrix bewusst ausgesetzt.
 
 ## 5. MapLibre-Karte und Standort
 
@@ -286,5 +294,5 @@ Staging für automatisierte Tests; Release-Health-Endpunkt und Wartungsmodus.
 
 ## Empfohlener nächster Schritt
 
-Phase 4: Assignment-Liste und -Details read-only auf dem bestätigten Session-Lifecycle
-implementieren; Mutationen erst nach verbindlicher Status- und `can`-Matrix ergänzen.
+Phase 5: MapLibre-Karte und nutzerkontrollierten Standort auf Basis der read-only
+Assignment-Details implementieren; Basemap-/Tile- und GeoJSON-Vertrag vorab festlegen.

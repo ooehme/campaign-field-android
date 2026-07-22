@@ -8,7 +8,9 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import de.oliveroehme.campaignfield.data.assignment.AssignmentRepository
 import de.oliveroehme.campaignfield.data.auth.AuthState
+import de.oliveroehme.campaignfield.ui.navigation.AppDestination
 import de.oliveroehme.campaignfield.ui.navigation.CampaignFieldBottomBar
 import de.oliveroehme.campaignfield.ui.navigation.CampaignFieldNavHost
 import de.oliveroehme.campaignfield.ui.screens.LoginScreen
@@ -16,7 +18,10 @@ import de.oliveroehme.campaignfield.ui.screens.RestoringSessionScreen
 import de.oliveroehme.campaignfield.ui.session.SessionViewModel
 
 @Composable
-fun CampaignFieldApp(viewModel: SessionViewModel) {
+fun CampaignFieldApp(
+    viewModel: SessionViewModel,
+    assignmentRepository: AssignmentRepository,
+) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val loginFeedback by viewModel.loginFeedback.collectAsStateWithLifecycle()
 
@@ -33,11 +38,13 @@ fun CampaignFieldApp(viewModel: SessionViewModel) {
         )
         is AuthState.SignedIn -> AuthenticatedApp(
             state = state,
+            assignmentRepository = assignmentRepository,
             isLoggingOut = false,
             onLogout = viewModel::logout,
         )
         is AuthState.SigningOut -> AuthenticatedApp(
             state = AuthState.SignedIn(state.profile),
+            assignmentRepository = assignmentRepository,
             isLoggingOut = true,
             onLogout = viewModel::logout,
         )
@@ -47,16 +54,18 @@ fun CampaignFieldApp(viewModel: SessionViewModel) {
 @Composable
 private fun AuthenticatedApp(
     state: AuthState.SignedIn,
+    assignmentRepository: AssignmentRepository,
     isLoggingOut: Boolean,
     onLogout: () -> Unit,
 ) {
     val navController = rememberNavController()
     val route = navController.currentBackStackEntryAsState().value?.destination?.route
+    val shellRoutes = AppDestination.shellItems.map(AppDestination::route)
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            if (route != null) {
+            if (route in shellRoutes) {
                 CampaignFieldBottomBar(navController = navController, currentRoute = route)
             }
         },
@@ -65,6 +74,7 @@ private fun AuthenticatedApp(
             navController = navController,
             contentPadding = innerPadding,
             profile = state.profile,
+            assignmentRepository = assignmentRepository,
             isLoggingOut = isLoggingOut,
             onLogout = onLogout,
         )

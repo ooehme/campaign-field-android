@@ -20,7 +20,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             CampaignFieldTheme {
-                CampaignFieldApp(sessionViewModel)
+                val application = this@MainActivity.application as CampaignFieldApplication
+                CampaignFieldApp(
+                    viewModel = sessionViewModel,
+                    assignmentRepository = application.appContainer.assignmentRepository,
+                )
             }
         }
     }
