@@ -2,6 +2,7 @@ package de.oliveroehme.campaignfield.network.assignment
 
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.map.FieldGeoJson
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -86,7 +87,21 @@ internal class AssignmentMapDataParser(
             ?: return null
         val geometry = geometry(item) ?: geometry(nested) ?: pointGeometry(item) ?: pointGeometry(nested)
             ?: return null
-        return AssignmentMapFeature(id, kind, geometry)
+        val status = if (kind == AssignmentMapFeatureKind.BUILDING) {
+            BuildingStatus.fromApi(item.text("status")).takeUnless { it == BuildingStatus.UNKNOWN }
+                ?: BuildingStatus.OPEN
+        } else null
+        val canUpdate = kind == AssignmentMapFeatureKind.BUILDING &&
+            ((item["can"] as? JsonObject)?.boolean("update") == true)
+        val label = item.text("label") ?: nested?.text("label")
+        return AssignmentMapFeature(
+            id = id,
+            kind = kind,
+            geometryGeoJson = geometry,
+            status = status,
+            canUpdate = canUpdate,
+            label = label,
+        )
     }
 
     private fun geometry(source: JsonObject?): String? = source?.let { value ->
@@ -119,6 +134,10 @@ internal class AssignmentMapDataParser(
     private fun JsonObject?.int(key: String): Int? = (this?.get(key) as? JsonPrimitive)
         ?.contentOrNull
         ?.toIntOrNull()
+
+    private fun JsonObject.boolean(key: String): Boolean? = (get(key) as? JsonPrimitive)
+        ?.contentOrNull
+        ?.toBooleanStrictOrNull()
 
     private companion object {
         val GEOMETRY_KEYS = listOf("geometry", "geojson", "geo_json", "geometry_json", "footprint")

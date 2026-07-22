@@ -48,6 +48,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.toGeoJson
 import de.oliveroehme.campaignfield.location.CompassSource
 import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
@@ -94,6 +97,7 @@ fun MapScreen(
     onRefreshAssignment: () -> Unit,
     onOpenAssignmentDetails: () -> Unit,
     onOpenProof: () -> Unit,
+    onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit = { _, _ -> },
     configuration: MapConfiguration,
     locationAccessState: LocationAccessState,
     locationSessionState: InMemoryLocationSessionState,
@@ -273,6 +277,7 @@ fun MapScreen(
             }
         },
         onShowActions = { showActions = true },
+        onChangeBuildingStatus = onChangeBuildingStatus,
     )
 
     if (showActions) {
@@ -581,6 +586,7 @@ private fun ScannerMapFace(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AssignmentMapFace(
     contentPadding: PaddingValues,
@@ -605,6 +611,7 @@ private fun AssignmentMapFace(
     onZoom: (Double) -> Unit,
     onToggleLive: () -> Unit,
     onShowActions: () -> Unit,
+    onChangeBuildingStatus: (AssignmentMapFeature, BuildingStatus) -> Unit,
 ) {
     val detail = requireNotNull(detailState.assignment)
     val assignment = detail.summary
@@ -615,6 +622,10 @@ private fun AssignmentMapFace(
         }
     }
     val featureGeoJson = remember(detailState.mapData) { detailState.mapData?.toGeoJson() }
+    var selectedBuildingId by remember { mutableStateOf<String?>(null) }
+    val selectedBuilding = detailState.mapData?.features?.firstOrNull { feature ->
+        feature.kind == AssignmentMapFeatureKind.BUILDING && feature.id == selectedBuildingId
+    }
 
     Column(
         modifier = Modifier
@@ -664,6 +675,10 @@ private fun AssignmentMapFace(
             )
         }
         detailState.errorMessage?.let { MapNotice(it, FieldRed) }
+        detailState.buildingStatusMessage?.let { MapNotice(it, FieldGreen) }
+        if (assignment.status != AssignmentStatus.ACTIVE && detailState.mapData?.buildingCount != 0) {
+            MapNotice("Gebäudestatus kann geändert werden, sobald der Auftrag aktiv ist.", FieldMuted)
+        }
         if (!isOnline) {
             MapNotice("Kein Netz – Zielgebiet und Standort werden ohne Basiskarte angezeigt.", FieldAmber)
         } else if (basemapState == BasemapState.UNAVAILABLE) {
@@ -694,6 +709,9 @@ private fun AssignmentMapFace(
                 reloadKey = reloadKey,
                 zoomRequest = zoomRequest,
                 onBasemapStateChanged = onBasemapStateChanged,
+                onFeatureClick = if (assignment.status == AssignmentStatus.ACTIVE) {
+                    { featureId -> selectedBuildingId = featureId }
+                } else null,
             )
             Column(
                 modifier = Modifier
@@ -790,6 +808,61 @@ private fun AssignmentMapFace(
                 variant = FieldButtonVariant.Secondary,
                 onClick = onReload,
             )
+        }
+    }
+
+    if (selectedBuilding != null) {
+        ModalBottomSheet(
+            onDismissRequest = { selectedBuildingId = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = FieldPanelColor,
+            contentColor = FieldWhite,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                FieldEyebrow("Gebäude")
+                Text(
+                    text = selectedBuilding.label ?: "Gebäude #${selectedBuilding.id}",
+                    color = FieldWhite,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                FieldStatusPill(
+                    label = (selectedBuilding.status ?: BuildingStatus.OPEN).displayName,
+                    tone = selectedBuilding.status.buildingTone(),
+                )
+                when {
+                    selectedBuilding.isPendingSync ->
+                        MapNotice("Für dieses Gebäude ist eine Synchronisierung offen.", FieldAmber)
+                    !selectedBuilding.canUpdate ->
+                        MapNotice("Keine Berechtigung für diese Gebäudeänderung.", FieldAmber)
+                }
+                BuildingStatus.actionStatuses.forEach { status ->
+                    FieldActionButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        text = status.displayName,
+                        enabled = selectedBuilding.canUpdate &&
+                            !selectedBuilding.isPendingSync &&
+                            selectedBuilding.status != status &&
+                            detailState.changingBuildingId == null,
+                        isLoading = detailState.changingBuildingId == selectedBuilding.id,
+                        variant = when (status) {
+                            BuildingStatus.DONE -> FieldButtonVariant.Primary
+                            BuildingStatus.UNREACHABLE,
+                            BuildingStatus.PROBLEM,
+                            -> FieldButtonVariant.Danger
+                            else -> FieldButtonVariant.Secondary
+                        },
+                        onClick = {
+                            onChangeBuildingStatus(selectedBuilding, status)
+                            selectedBuildingId = null
+                        },
+                    )
+                }
+            }
         }
     }
 }
@@ -967,6 +1040,14 @@ private fun AssignmentStatus.mapTone(): FieldStatusTone = when (this) {
     AssignmentStatus.READY, AssignmentStatus.COMPLETED -> FieldStatusTone.Ready
     AssignmentStatus.PAUSED -> FieldStatusTone.Warning
     AssignmentStatus.CANCELLED -> FieldStatusTone.Danger
+    else -> FieldStatusTone.Neutral
+}
+
+private fun BuildingStatus?.buildingTone(): FieldStatusTone = when (this) {
+    BuildingStatus.DONE -> FieldStatusTone.Ready
+    BuildingStatus.BLOCKED, BuildingStatus.SKIPPED -> FieldStatusTone.Warning
+    BuildingStatus.UNREACHABLE, BuildingStatus.PROBLEM -> FieldStatusTone.Danger
+    BuildingStatus.OPEN -> FieldStatusTone.Active
     else -> FieldStatusTone.Neutral
 }
 

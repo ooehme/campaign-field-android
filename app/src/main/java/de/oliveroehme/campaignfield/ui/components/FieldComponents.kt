@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -303,6 +304,8 @@ fun FieldStatusPill(
 
 enum class FieldButtonVariant {
     Primary,
+    Success,
+    Warning,
     Secondary,
     Danger,
     Ghost,
@@ -317,21 +320,28 @@ fun FieldActionButton(
     enabled: Boolean = true,
     isLoading: Boolean = false,
     variant: FieldButtonVariant = FieldButtonVariant.Primary,
+    compact: Boolean = false,
 ) {
     val tint = when (variant) {
         FieldButtonVariant.Primary -> FieldCyan
+        FieldButtonVariant.Success -> FieldGreen
+        FieldButtonVariant.Warning -> FieldAmber
         FieldButtonVariant.Secondary -> FieldCyan
         FieldButtonVariant.Danger -> FieldRed
         FieldButtonVariant.Ghost -> FieldMuted
     }
     val borderColor = when (variant) {
         FieldButtonVariant.Primary -> FieldCyan
+        FieldButtonVariant.Success -> FieldGreen.copy(alpha = 0.60f)
+        FieldButtonVariant.Warning -> FieldAmber.copy(alpha = 0.70f)
         FieldButtonVariant.Secondary -> FieldBorder
         FieldButtonVariant.Danger -> FieldRed.copy(alpha = 0.60f)
         FieldButtonVariant.Ghost -> Color.Transparent
     }
     val background = when (variant) {
         FieldButtonVariant.Primary -> FieldCyan.copy(alpha = 0.15f)
+        FieldButtonVariant.Success -> FieldGreen.copy(alpha = 0.12f)
+        FieldButtonVariant.Warning -> FieldAmber.copy(alpha = 0.12f)
         FieldButtonVariant.Secondary -> FieldBlackOverlay.copy(alpha = 0.20f)
         FieldButtonVariant.Danger -> FieldRed.copy(alpha = 0.15f)
         FieldButtonVariant.Ghost -> Color.Transparent
@@ -350,7 +360,7 @@ fun FieldActionButton(
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = if (compact) 8.dp else 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -362,17 +372,19 @@ fun FieldActionButton(
             )
         } else if (icon != null) {
             Icon(
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(if (compact) 16.dp else 18.dp),
                 imageVector = icon,
                 contentDescription = null,
                 tint = tint,
             )
         }
-        if (isLoading || icon != null) Spacer(Modifier.size(8.dp))
+        if (isLoading || icon != null) Spacer(Modifier.size(if (compact) 5.dp else 8.dp))
         Text(
             text = text,
             color = if (enabled) tint else tint.copy(alpha = 0.55f),
-            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
             textAlign = TextAlign.Center,
         )
     }

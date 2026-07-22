@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -122,12 +123,14 @@ fun MapLibreMapView(
     reloadKey: Int,
     zoomRequest: MapZoomRequest?,
     onBasemapStateChanged: (BasemapState) -> Unit,
+    onFeatureClick: ((String) -> Unit)? = null,
 ) {
     val mapView = rememberManagedMapView(isOnline, reloadKey, mode)
     var map by remember(mapView) { mutableStateOf<MapLibreMap?>(null) }
     var loadedStyle by remember(mapView) { mutableStateOf<Style?>(null) }
     var fallbackInstalled by remember(mapView) { mutableStateOf(false) }
     var cameraInitialized by remember(mapView) { mutableStateOf(false) }
+    val currentOnFeatureClick by rememberUpdatedState(onFeatureClick)
 
     DisposableEffect(mapView, map) {
         val failureListener = MapView.OnDidFailLoadingMapListener {
@@ -259,6 +262,37 @@ fun MapLibreMapView(
             }
             readyMap.addOnCameraIdleListener(listener)
             onDispose { readyMap.removeOnCameraIdleListener(listener) }
+        }
+    }
+
+    DisposableEffect(map, mode) {
+        val readyMap = map
+        if (readyMap == null || mode != FieldMapMode.ASSIGNMENT) {
+            onDispose { }
+        } else {
+            val listener = MapLibreMap.OnMapClickListener { point ->
+                val callback = currentOnFeatureClick ?: return@OnMapClickListener false
+                val feature = readyMap.queryRenderedFeatures(
+                    readyMap.projection.toScreenLocation(point),
+                    FEATURE_BUILDING_LAYER_ID,
+                    FEATURE_BUILDING_OUTLINE_LAYER_ID,
+                    FEATURE_GEOMETRY_POINT_LAYER_ID,
+                    FEATURE_MARKER_LAYER_ID,
+                ).firstOrNull { rendered ->
+                    rendered.hasProperty("kind") && rendered.getStringProperty("kind") == "building"
+                }
+                val featureId = feature
+                    ?.takeIf { it.hasProperty("featureId") }
+                    ?.getStringProperty("featureId")
+                if (featureId.isNullOrBlank()) {
+                    false
+                } else {
+                    callback(featureId)
+                    true
+                }
+            }
+            readyMap.addOnMapClickListener(listener)
+            onDispose { readyMap.removeOnMapClickListener(listener) }
         }
     }
 

@@ -8,6 +8,7 @@ import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.domain.AreaSummary
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.TeamSummary
 import de.oliveroehme.campaignfield.map.FieldGeoJson
 import de.oliveroehme.campaignfield.network.ApiConfiguration
@@ -16,6 +17,8 @@ import java.io.IOException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,6 +43,14 @@ interface AssignmentRemoteDataSource {
         id: String,
         status: AssignmentStatus,
     ): AssignmentResult<AssignmentDetail> = AssignmentResult.Failure(
+        AssignmentFailure.unsupportedMutation(),
+    )
+
+    suspend fun updateAssignmentBuildingStatus(
+        id: String,
+        status: BuildingStatus,
+        clientEventKey: String? = null,
+    ): AssignmentResult<Unit> = AssignmentResult.Failure(
         AssignmentFailure.unsupportedMutation(),
     )
 }
@@ -205,6 +216,33 @@ class AssignmentHttpClient internal constructor(
                         onFailure = { AssignmentResult.Failure(AssignmentFailure.invalidResponse()) },
                     )
             }
+            is RawResponse.HttpFailure -> AssignmentResult.Failure(
+                AssignmentFailure.fromHttp(
+                    response.status,
+                    detailRequest = true,
+                    mutationRequest = true,
+                ),
+            )
+            RawResponse.TransportFailure -> AssignmentResult.Failure(AssignmentFailure.network())
+        }
+    }
+
+    override suspend fun updateAssignmentBuildingStatus(
+        id: String,
+        status: BuildingStatus,
+        clientEventKey: String?,
+    ): AssignmentResult<Unit> = withContext(ioDispatcher) {
+        val payload = buildJsonObject {
+            put("status", status.apiValue)
+            clientEventKey?.let { put("client_event_key", it) }
+        }.toString()
+        val body = payload.toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url(configuration.apiEndpointSegments("assignment-buildings", id))
+            .patch(body)
+            .build()
+        when (val response = execute(request)) {
+            is RawResponse.Success -> AssignmentResult.Success(Unit)
             is RawResponse.HttpFailure -> AssignmentResult.Failure(
                 AssignmentFailure.fromHttp(
                     response.status,

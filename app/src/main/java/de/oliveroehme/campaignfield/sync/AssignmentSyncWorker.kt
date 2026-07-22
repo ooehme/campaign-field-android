@@ -6,6 +6,10 @@ import androidx.work.WorkerParameters
 import de.oliveroehme.campaignfield.CampaignFieldApplication
 import de.oliveroehme.campaignfield.database.OfflineStore
 import de.oliveroehme.campaignfield.domain.SyncFailureKind
+import de.oliveroehme.campaignfield.domain.SyncEventKind
+import de.oliveroehme.campaignfield.domain.SyncQueueItem
+import de.oliveroehme.campaignfield.domain.BuildingStatus
+import de.oliveroehme.campaignfield.network.assignment.AssignmentFailure
 import de.oliveroehme.campaignfield.network.assignment.AssignmentFailureKind
 import de.oliveroehme.campaignfield.network.assignment.AssignmentRemoteDataSource
 import de.oliveroehme.campaignfield.network.assignment.AssignmentResult
@@ -20,10 +24,8 @@ class AssignmentSyncEngine(
 
         for (queuedEvent in offlineStore.readPendingQueue()) {
             val event = offlineStore.claimQueueEvent(queuedEvent.id) ?: continue
-            when (val result = remote.updateAssignmentStatus(event.assignmentId, event.targetStatus)) {
+            when (val result = syncEvent(event)) {
                 is AssignmentResult.Success -> {
-                    // Der Server-Snapshot wird zuerst übernommen. Erst danach gilt das Event als gesynct.
-                    offlineStore.storeAssignment(result.value)
                     offlineStore.markQueueEventSynced(event.id)
                 }
                 is AssignmentResult.Failure -> when (result.failure.kind) {
@@ -67,6 +69,49 @@ class AssignmentSyncEngine(
 
         offlineStore.cleanupSyncedEvents()
         return SyncProcessOutcome.COMPLETE
+    }
+
+    private suspend fun syncEvent(event: SyncQueueItem): AssignmentResult<Unit> = when (event.kind) {
+        SyncEventKind.ASSIGNMENT_STATUS_UPDATE -> when (
+            val result = remote.updateAssignmentStatus(event.assignmentId, event.targetStatus)
+        ) {
+            is AssignmentResult.Success -> {
+                offlineStore.storeAssignment(result.value)
+                AssignmentResult.Success(Unit)
+            }
+            is AssignmentResult.Failure -> result
+        }
+        SyncEventKind.ASSIGNMENT_BUILDING_UPDATE -> {
+            val buildingId = event.buildingId
+            val targetStatus = event.targetBuildingStatus
+            if (buildingId == null || targetStatus == null || targetStatus == BuildingStatus.UNKNOWN) {
+                AssignmentResult.Failure(
+                    AssignmentFailure(
+                        AssignmentFailureKind.INVALID_RESPONSE,
+                        null,
+                        "Die lokale Gebäudeänderung ist unvollständig.",
+                    ),
+                )
+            } else {
+                when (
+                    val result = remote.updateAssignmentBuildingStatus(
+                        buildingId,
+                        targetStatus,
+                        event.id,
+                    )
+                ) {
+                    is AssignmentResult.Success -> {
+                        offlineStore.updateAssignmentBuildingStatus(
+                            event.assignmentId,
+                            buildingId,
+                            targetStatus,
+                        )
+                        AssignmentResult.Success(Unit)
+                    }
+                    is AssignmentResult.Failure -> result
+                }
+            }
+        }
     }
 }
 

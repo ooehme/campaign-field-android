@@ -2,6 +2,7 @@ package de.oliveroehme.campaignfield.network.assignment
 
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentType
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import de.oliveroehme.campaignfield.network.auth.PersistentCookieJar
 import de.oliveroehme.campaignfield.network.auth.SanctumHttpClient
@@ -105,6 +106,26 @@ class AssignmentHttpClientTest {
         assertEquals("PATCH", request.method)
         assertEquals("/api/assignments/9", request.path)
         assertEquals("""{"status":"paused"}""", request.body.readUtf8())
+    }
+
+    @Test
+    fun `patches assignment building status`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val result = client.updateAssignmentBuildingStatus(
+            "17",
+            BuildingStatus.UNREACHABLE,
+            "queue-1",
+        )
+
+        assertTrue(result is AssignmentResult.Success)
+        val request = server.takeRequest()
+        assertEquals("PATCH", request.method)
+        assertEquals("/api/assignment-buildings/17", request.path)
+        assertEquals(
+            """{"status":"unreachable","client_event_key":"queue-1"}""",
+            request.body.readUtf8(),
+        )
     }
 
     @Test

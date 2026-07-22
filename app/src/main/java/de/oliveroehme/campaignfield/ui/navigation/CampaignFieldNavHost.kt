@@ -70,6 +70,7 @@ fun CampaignFieldNavHost(
                 state = state,
                 syncState = syncState,
                 onRefresh = viewModel::refresh,
+                onChangeStatus = viewModel::changeStatus,
                 onOpenSync = {
                     navController.navigate(AppDestination.Sync.route) { launchSingleTop = true }
                 },
@@ -149,6 +150,7 @@ fun CampaignFieldNavHost(
                         launchSingleTop = true
                     }
                 },
+                onChangeBuildingStatus = viewModel::changeBuildingStatus,
                 configuration = mapConfiguration,
                 locationAccessState = locationAccessState,
                 locationSessionState = locationSessionState,

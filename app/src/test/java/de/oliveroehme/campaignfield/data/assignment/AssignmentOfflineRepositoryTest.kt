@@ -4,11 +4,14 @@ import de.oliveroehme.campaignfield.database.CachedValue
 import de.oliveroehme.campaignfield.database.OfflineStore
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentPermissions
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentType
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.TeamSummary
 import de.oliveroehme.campaignfield.domain.SyncEventKind
 import de.oliveroehme.campaignfield.domain.SyncFailureKind
@@ -77,6 +80,40 @@ class AssignmentOfflineRepositoryTest {
     }
 
     @Test
+    fun `stores building status in cache and queue while offline`() = runBlocking {
+        val building = AssignmentMapFeature(
+            id = "building-1",
+            kind = AssignmentMapFeatureKind.BUILDING,
+            geometryGeoJson = "{}",
+            status = BuildingStatus.OPEN,
+            canUpdate = true,
+        )
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(1, features = listOf(building)), 1L)
+        }
+        val scheduler = RecordingScheduler()
+        val repository = DefaultAssignmentRepository(
+            remote = FakeRemote(),
+            offlineStore = store,
+            syncScheduler = scheduler,
+            networkStateProvider = NetworkStateProvider { false },
+        )
+
+        val result = repository.changeBuildingStatus(
+            detail(AssignmentStatus.ACTIVE),
+            building,
+            BuildingStatus.DONE,
+        ) as AssignmentResult.Success
+
+        assertTrue(result.value.queued)
+        assertEquals(BuildingStatus.DONE, result.value.building.status)
+        assertEquals(BuildingStatus.DONE, store.mapData?.value?.features?.single()?.status)
+        assertEquals(SyncEventKind.ASSIGNMENT_BUILDING_UPDATE, store.queue.value.single().kind)
+        assertEquals("building-1", store.queue.value.single().buildingId)
+        assertEquals(1, scheduler.calls)
+    }
+
+    @Test
     fun `team member cannot complete assignment even with assignment permission`() = runBlocking {
         val repository = DefaultAssignmentRepository(remote = FakeRemote())
 
@@ -91,6 +128,22 @@ class AssignmentOfflineRepositoryTest {
             AssignmentFailureKind.FORBIDDEN,
             (result as AssignmentResult.Failure).failure.kind,
         )
+    }
+
+    @Test
+    fun `team lead can start assignment through general update permission`() = runBlocking {
+        val repository = DefaultAssignmentRepository(remote = FakeRemote())
+        val assignment = detail(AssignmentStatus.READY).copy(
+            permissions = AssignmentPermissions(update = true),
+        )
+
+        val result = repository.changeStatus(
+            profile(),
+            assignment,
+            AssignmentStatus.ACTIVE,
+        )
+
+        assertTrue(result is AssignmentResult.Success)
     }
 
     @Test
@@ -162,6 +215,36 @@ class AssignmentOfflineRepositoryTest {
         assertEquals(SyncProcessOutcome.COMPLETE, outcome)
         assertEquals(listOf("store", "synced"), store.operationLog)
         assertEquals(SyncQueueStatus.SYNCED, store.queue.value.single().status)
+    }
+
+    @Test
+    fun `sync sends queued building status and persists it before completion`() = runBlocking {
+        val building = AssignmentMapFeature(
+            id = "building-1",
+            kind = AssignmentMapFeatureKind.BUILDING,
+            geometryGeoJson = "{}",
+            status = BuildingStatus.OPEN,
+            canUpdate = true,
+        )
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(1, features = listOf(building)), 1L)
+            enqueueAssignmentBuildingStatusUpdate(
+                "assignment-1",
+                "building-1",
+                BuildingStatus.OPEN,
+                BuildingStatus.DONE,
+            )
+        }
+        val remote = FakeRemote()
+
+        val outcome = AssignmentSyncEngine(remote, store).processPending()
+
+        assertEquals(SyncProcessOutcome.COMPLETE, outcome)
+        assertEquals("building-1", remote.updatedBuildingId)
+        assertEquals(BuildingStatus.DONE, remote.updatedBuildingStatus)
+        assertEquals("event-1", remote.updatedBuildingClientEventKey)
+        assertEquals(BuildingStatus.DONE, store.mapData?.value?.features?.single()?.status)
+        assertEquals(listOf("building", "synced"), store.operationLog)
     }
 
     @Test
@@ -263,6 +346,9 @@ class AssignmentOfflineRepositoryTest {
         private val mapDelayMillis: Long = 0,
     ) : AssignmentRemoteDataSource {
         var mapLoadCalls = 0
+        var updatedBuildingId: String? = null
+        var updatedBuildingStatus: BuildingStatus? = null
+        var updatedBuildingClientEventKey: String? = null
         override suspend fun loadAssignments(
             userId: String?,
             teamIds: List<String>,
@@ -284,6 +370,17 @@ class AssignmentOfflineRepositoryTest {
             id: String,
             status: AssignmentStatus,
         ): AssignmentResult<AssignmentDetail> = updateResult
+
+        override suspend fun updateAssignmentBuildingStatus(
+            id: String,
+            status: BuildingStatus,
+            clientEventKey: String?,
+        ): AssignmentResult<Unit> {
+            updatedBuildingId = id
+            updatedBuildingStatus = status
+            updatedBuildingClientEventKey = clientEventKey
+            return AssignmentResult.Success(Unit)
+        }
     }
 
     private class FakeOfflineStore : OfflineStore {
@@ -314,6 +411,21 @@ class AssignmentOfflineRepositoryTest {
             this.mapData = CachedValue(mapData, 1L)
         }
 
+        override suspend fun updateAssignmentBuildingStatus(
+            assignmentId: String,
+            buildingId: String,
+            status: BuildingStatus,
+        ) {
+            operationLog += "building"
+            mapData = mapData?.copy(
+                value = mapData!!.value.copy(
+                    features = mapData!!.value.features.map { feature ->
+                        if (feature.id == buildingId) feature.copy(status = status) else feature
+                    },
+                ),
+            )
+        }
+
         override suspend fun enqueueAssignmentStatusUpdate(
             assignmentId: String,
             previousStatus: AssignmentStatus,
@@ -325,6 +437,31 @@ class AssignmentOfflineRepositoryTest {
                 kind = SyncEventKind.ASSIGNMENT_STATUS_UPDATE,
                 targetStatus = targetStatus,
                 previousStatus = previousStatus,
+                status = SyncQueueStatus.PENDING,
+                attempts = 0,
+                createdAtEpochMillis = 1L,
+                updatedAtEpochMillis = 1L,
+            )
+            queue.value += event
+            return event
+        }
+
+
+        override suspend fun enqueueAssignmentBuildingStatusUpdate(
+            assignmentId: String,
+            buildingId: String,
+            previousStatus: BuildingStatus,
+            targetStatus: BuildingStatus,
+        ): SyncQueueItem {
+            val event = SyncQueueItem(
+                id = "event-${queue.value.size + 1}",
+                assignmentId = assignmentId,
+                kind = SyncEventKind.ASSIGNMENT_BUILDING_UPDATE,
+                targetStatus = AssignmentStatus.UNKNOWN,
+                previousStatus = AssignmentStatus.UNKNOWN,
+                buildingId = buildingId,
+                targetBuildingStatus = targetStatus,
+                previousBuildingStatus = previousStatus,
                 status = SyncQueueStatus.PENDING,
                 attempts = 0,
                 createdAtEpochMillis = 1L,

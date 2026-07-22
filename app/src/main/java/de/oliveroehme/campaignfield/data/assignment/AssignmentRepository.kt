@@ -4,9 +4,12 @@ import de.oliveroehme.campaignfield.data.Repository
 import de.oliveroehme.campaignfield.database.OfflineStore
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeature
+import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.domain.availableStatusActions
 import de.oliveroehme.campaignfield.domain.forOperativeOverview
@@ -37,6 +40,11 @@ data class AssignmentStatusChange(
     val queued: Boolean,
 )
 
+data class AssignmentBuildingStatusChange(
+    val building: AssignmentMapFeature,
+    val queued: Boolean,
+)
+
 interface AssignmentRepository : Repository {
     suspend fun loadAssignments(profile: UserProfile): AssignmentResult<AssignmentPage>
     suspend fun loadAssignment(id: String): AssignmentResult<AssignmentDetail>
@@ -49,6 +57,11 @@ interface AssignmentRepository : Repository {
         assignment: AssignmentDetail,
         targetStatus: AssignmentStatus,
     ): AssignmentResult<AssignmentStatusChange>
+    suspend fun changeBuildingStatus(
+        assignment: AssignmentDetail,
+        building: AssignmentMapFeature,
+        targetStatus: BuildingStatus,
+    ): AssignmentResult<AssignmentBuildingStatusChange>
     fun observeCachedAssignments(profile: UserProfile): Flow<AssignmentPage?>
     fun observeCachedAssignment(id: String): Flow<AssignmentDetail?>
     fun observeCachedAssignmentMapData(id: String): Flow<AssignmentMapData?>
@@ -151,7 +164,9 @@ class DefaultAssignmentRepository(
         ) {
             is AssignmentResult.Success -> {
                 offlineStore?.storeAssignmentMapData(assignment.summary.id, result.value)
-                result
+                AssignmentResult.Success(
+                    offlineStore?.readAssignmentMapData(assignment.summary.id)?.value ?: result.value,
+                )
             }
             is AssignmentResult.Failure -> {
                 val cached = offlineStore?.readAssignmentMapData(assignment.summary.id)
@@ -231,6 +246,73 @@ class DefaultAssignmentRepository(
         }
     }
 
+    override suspend fun changeBuildingStatus(
+        assignment: AssignmentDetail,
+        building: AssignmentMapFeature,
+        targetStatus: BuildingStatus,
+    ): AssignmentResult<AssignmentBuildingStatusChange> {
+        if (assignment.summary.status != AssignmentStatus.ACTIVE) {
+            return AssignmentResult.Failure(
+                AssignmentFailure(
+                    AssignmentFailureKind.CONFLICT,
+                    409,
+                    "Gebäude können nur in einem aktiven Auftrag bearbeitet werden.",
+                ),
+            )
+        }
+        if (building.kind != AssignmentMapFeatureKind.BUILDING || !building.canUpdate) {
+            return AssignmentResult.Failure(
+                AssignmentFailure(
+                    AssignmentFailureKind.FORBIDDEN,
+                    403,
+                    "Keine Berechtigung für diese Gebäudeänderung.",
+                ),
+            )
+        }
+        if (targetStatus !in BuildingStatus.actionStatuses) {
+            return AssignmentResult.Failure(
+                AssignmentFailure(
+                    AssignmentFailureKind.VALIDATION,
+                    422,
+                    "Unbekannter Gebäude-Status.",
+                ),
+            )
+        }
+        if (building.isPendingSync) {
+            return AssignmentResult.Failure(
+                AssignmentFailure(
+                    AssignmentFailureKind.CONFLICT,
+                    409,
+                    "Für dieses Gebäude ist bereits eine Synchronisierung offen.",
+                ),
+            )
+        }
+
+        if (!networkStateProvider.isOnline()) {
+            return queueBuildingStatusChange(assignment, building, targetStatus)
+        }
+        return when (val result = remote.updateAssignmentBuildingStatus(building.id, targetStatus)) {
+            is AssignmentResult.Success -> {
+                offlineStore?.updateAssignmentBuildingStatus(
+                    assignment.summary.id,
+                    building.id,
+                    targetStatus,
+                )
+                AssignmentResult.Success(
+                    AssignmentBuildingStatusChange(
+                        building.copy(status = targetStatus),
+                        queued = false,
+                    ),
+                )
+            }
+            is AssignmentResult.Failure -> if (result.failure.kind.isRetryableMutation()) {
+                queueBuildingStatusChange(assignment, building, targetStatus)
+            } else {
+                result
+            }
+        }
+    }
+
     override fun observeCachedAssignments(profile: UserProfile): Flow<AssignmentPage?> =
         offlineStore?.observeAssignments()?.map { cached ->
             cached?.value?.copy(items = normalizeForProfile(cached.value.items, profile))
@@ -260,6 +342,28 @@ class DefaultAssignmentRepository(
             summary = assignment.summary.copy(status = targetStatus),
         )
         return AssignmentResult.Success(AssignmentStatusChange(localAssignment, queued = true))
+    }
+
+    private suspend fun queueBuildingStatusChange(
+        assignment: AssignmentDetail,
+        building: AssignmentMapFeature,
+        targetStatus: BuildingStatus,
+    ): AssignmentResult<AssignmentBuildingStatusChange> {
+        val store = offlineStore ?: return AssignmentResult.Failure(AssignmentFailure.network())
+        store.enqueueAssignmentBuildingStatusUpdate(
+            assignmentId = assignment.summary.id,
+            buildingId = building.id,
+            previousStatus = building.status ?: BuildingStatus.OPEN,
+            targetStatus = targetStatus,
+        )
+        store.updateAssignmentBuildingStatus(assignment.summary.id, building.id, targetStatus)
+        syncScheduler.schedule()
+        return AssignmentResult.Success(
+            AssignmentBuildingStatusChange(
+                building.copy(status = targetStatus, isPendingSync = true),
+                queued = true,
+            ),
+        )
     }
 
     private fun normalizeForProfile(

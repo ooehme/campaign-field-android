@@ -2,6 +2,7 @@ package de.oliveroehme.campaignfield.network.assignment
 
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentType
+import de.oliveroehme.campaignfield.domain.availableStatusActions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -23,7 +24,8 @@ class AssignmentParserTest {
                 "due_at": "2026-08-03",
                 "campaign": {"id": 5, "name": "Sommer"},
                 "team": {"id": 8, "name": "Team Nord"},
-                "area": {"id": 9, "label": "Altstadt"}
+                "area": {"id": 9, "label": "Altstadt"},
+                "can": {"pause": true, "complete": true, "cancel": true}
               }],
               "meta": {"current_page": 2, "last_page": 3, "per_page": 100, "total": 201}
             }
@@ -40,6 +42,9 @@ class AssignmentParserTest {
             assertEquals("Sommer", campaign?.name)
             assertEquals("8", team?.id)
             assertEquals("Altstadt", area?.name)
+            assertTrue(permissions.pause)
+            assertTrue(permissions.complete)
+            assertTrue(permissions.cancel)
         }
     }
 
@@ -74,6 +79,10 @@ class AssignmentParserTest {
         assertFalse(detail.permissions.start)
         assertFalse(detail.permissions.createProof)
         assertFalse(detail.permissions.managePosterLocations)
+        assertEquals(
+            listOf(AssignmentStatus.ACTIVE, AssignmentStatus.CANCELLED),
+            detail.availableStatusActions().map { it.targetStatus },
+        )
     }
 
     @Test

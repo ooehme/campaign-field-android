@@ -22,12 +22,35 @@ data class AssignmentMapFeature(
     val id: String,
     val kind: AssignmentMapFeatureKind,
     val geometryGeoJson: String,
+    val status: BuildingStatus? = null,
+    val canUpdate: Boolean = false,
+    val label: String? = null,
+    val isPendingSync: Boolean = false,
 )
 
 @Serializable
 enum class AssignmentMapFeatureKind {
     BUILDING,
     POSTER,
+}
+
+@Serializable
+enum class BuildingStatus(val apiValue: String, val displayName: String) {
+    OPEN("open", "Offen"),
+    DONE("done", "Erledigt"),
+    BLOCKED("blocked", "Blockiert"),
+    UNREACHABLE("unreachable", "Nicht erreichbar"),
+    SKIPPED("skipped", "Übersprungen"),
+    PROBLEM("problem", "Problem"),
+    UNKNOWN("unknown", "Unbekannt");
+
+    companion object {
+        val actionStatuses = listOf(DONE, BLOCKED, UNREACHABLE, SKIPPED, PROBLEM)
+
+        fun fromApi(value: String?): BuildingStatus = entries.firstOrNull {
+            it.apiValue == value?.trim()?.lowercase()
+        } ?: UNKNOWN
+    }
 }
 
 fun AssignmentMapData.toGeoJson(): String {
@@ -47,13 +70,16 @@ fun AssignmentMapData.toGeoJson(): String {
                                     "properties",
                                     buildJsonObject {
                                         put("id", if (index == 0) feature.id else "${feature.id}-$index")
+                                        put("featureId", feature.id)
                                         when (feature.kind) {
                                             AssignmentMapFeatureKind.BUILDING -> {
                                                 put("kind", "building")
-                                                put("color", "#16414D")
+                                                put("color", feature.status.mapColor())
                                                 put("fillOpacity", 0.72)
                                                 put("extrusionHeight", 5.0)
                                                 put("radius", 4.0)
+                                                put("status", feature.status?.apiValue ?: BuildingStatus.OPEN.apiValue)
+                                                put("pendingSync", feature.isPendingSync)
                                             }
                                             AssignmentMapFeatureKind.POSTER -> {
                                                 put("kind", "poster")
@@ -73,6 +99,13 @@ fun AssignmentMapData.toGeoJson(): String {
             },
         )
     }.toString()
+}
+
+private fun BuildingStatus?.mapColor(): String = when (this) {
+    BuildingStatus.DONE -> "#38FF9C"
+    BuildingStatus.BLOCKED, BuildingStatus.SKIPPED -> "#FFB84D"
+    BuildingStatus.UNREACHABLE, BuildingStatus.PROBLEM -> "#FF5C7A"
+    BuildingStatus.OPEN, BuildingStatus.UNKNOWN, null -> "#16414D"
 }
 
 private fun extractGeometries(value: JsonElement?): List<JsonElement> {

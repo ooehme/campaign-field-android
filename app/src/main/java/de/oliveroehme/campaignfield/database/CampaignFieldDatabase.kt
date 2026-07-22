@@ -51,6 +51,7 @@ data class AssignmentListEntryEntity(
 data class SyncQueueEntity(
     @PrimaryKey val id: String,
     val assignmentId: String,
+    val subjectId: String? = null,
     val kind: String,
     val targetStatus: String,
     val previousStatus: String,
@@ -228,7 +229,7 @@ abstract class OfflineDao {
         AssignmentListEntryEntity::class,
         SyncQueueEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class CampaignFieldDatabase : RoomDatabase() {
@@ -241,11 +242,17 @@ abstract class CampaignFieldDatabase : RoomDatabase() {
             context.applicationContext,
             CampaignFieldDatabase::class.java,
             DATABASE_NAME,
-        ).addMigrations(MIGRATION_1_2).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `assignment_cache` ADD COLUMN `mapDataJson` TEXT")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sync_queue` ADD COLUMN `subjectId` TEXT")
             }
         }
     }

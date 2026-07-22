@@ -37,9 +37,11 @@ import androidx.compose.ui.unit.dp
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
+import de.oliveroehme.campaignfield.domain.AssignmentStatusAction
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.domain.SyncQueueItem
+import de.oliveroehme.campaignfield.domain.SyncEventKind
 import de.oliveroehme.campaignfield.domain.SyncQueueStatus
 import de.oliveroehme.campaignfield.domain.availableStatusActions
 import de.oliveroehme.campaignfield.ui.assignment.AssignmentDetailUiState
@@ -81,6 +83,7 @@ fun AssignmentsScreen(
     onRefresh: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenAssignment: (String) -> Unit,
+    onChangeStatus: (AssignmentSummary, AssignmentStatus) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(contentPadding),
@@ -145,10 +148,24 @@ fun AssignmentsScreen(
                     item { FieldMessagePanel(message = message, tint = FieldRed) }
                 }
                 items(state.items, key = AssignmentSummary::id) { assignment ->
+                    val syncEvents = syncState.events.filter { it.assignmentId == assignment.id }
                     AssignmentCard(
                         assignment = assignment,
                         isOfflineReady = assignment.id in state.offlineReadyAssignmentIds,
-                        syncEvents = syncState.events.filter { it.assignmentId == assignment.id },
+                        syncEvents = syncEvents,
+                        statusActions = if (assignment.id in state.teamLeadAssignmentIds) {
+                            assignment.availableStatusActions()
+                        } else emptyList(),
+                        changingTargetStatus = if (
+                            state.changingStatusAssignmentId == assignment.id
+                        ) state.changingTargetStatus else null,
+                        hasPendingStatusChange = syncEvents.any { event ->
+                            event.kind == SyncEventKind.ASSIGNMENT_STATUS_UPDATE &&
+                                (event.status == SyncQueueStatus.PENDING ||
+                                    event.status == SyncQueueStatus.SYNCING)
+                        },
+                        statusError = state.statusErrors[assignment.id],
+                        onChangeStatus = { status -> onChangeStatus(assignment, status) },
                         onOpenAssignment = onOpenAssignment,
                     )
                 }
@@ -172,6 +189,11 @@ private fun AssignmentCard(
     assignment: AssignmentSummary,
     isOfflineReady: Boolean,
     syncEvents: List<SyncQueueItem>,
+    statusActions: List<AssignmentStatusAction>,
+    changingTargetStatus: AssignmentStatus?,
+    hasPendingStatusChange: Boolean,
+    statusError: String?,
+    onChangeStatus: (AssignmentStatus) -> Unit,
     onOpenAssignment: (String) -> Unit,
 ) {
     val active = assignment.status == AssignmentStatus.ACTIVE
@@ -243,7 +265,52 @@ private fun AssignmentCard(
                 value = assignment.dueAt?.let(::formatDateTime) ?: "Keine Fälligkeit",
             )
         }
+
+        if (statusActions.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                statusActions.forEach { action ->
+                    FieldActionButton(
+                        modifier = Modifier.weight(1f),
+                        text = action.label,
+                        icon = statusActionIcon(action.targetStatus),
+                        compact = statusActions.size > 2,
+                        enabled = changingTargetStatus == null && !hasPendingStatusChange,
+                        isLoading = changingTargetStatus == action.targetStatus,
+                        variant = statusActionVariant(action.targetStatus),
+                        onClick = { onChangeStatus(action.targetStatus) },
+                    )
+                }
+            }
+        }
+
+        statusError?.let { message ->
+            FieldMessagePanel(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                message = message,
+                tint = FieldRed,
+            )
+        }
     }
+}
+
+private fun statusActionIcon(status: AssignmentStatus): androidx.compose.ui.graphics.vector.ImageVector =
+    when (status) {
+        AssignmentStatus.ACTIVE -> FieldIcons.CirclePlay
+        AssignmentStatus.PAUSED -> FieldIcons.CirclePause
+        AssignmentStatus.COMPLETED -> FieldIcons.CheckCheck
+        AssignmentStatus.CANCELLED -> FieldIcons.Ban
+        AssignmentStatus.READY -> FieldIcons.Flag
+        else -> FieldIcons.ArrowRight
+    }
+
+private fun statusActionVariant(status: AssignmentStatus): FieldButtonVariant = when (status) {
+    AssignmentStatus.CANCELLED -> FieldButtonVariant.Danger
+    AssignmentStatus.COMPLETED -> FieldButtonVariant.Success
+    AssignmentStatus.PAUSED -> FieldButtonVariant.Warning
+    else -> FieldButtonVariant.Primary
 }
 
 @Composable

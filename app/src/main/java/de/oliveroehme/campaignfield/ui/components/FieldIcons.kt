@@ -160,6 +160,47 @@ object FieldIcons {
         )
     }
 
+    val CirclePlay by lazy {
+        lucideIcon(
+            "CirclePlay",
+            circle(12f, 12f, 10f),
+            "m10 8 6 4-6 4Z",
+        )
+    }
+
+    val CirclePause by lazy {
+        lucideIcon(
+            "CirclePause",
+            circle(12f, 12f, 10f),
+            "M10 9v6",
+            "M14 9v6",
+        )
+    }
+
+    val CheckCheck by lazy {
+        lucideIcon(
+            "CheckCheck",
+            "m18 6-7 7-3-3",
+            "m22 10-7.5 7.5L13 16",
+        )
+    }
+
+    val Ban by lazy {
+        lucideIcon(
+            "Ban",
+            circle(12f, 12f, 10f),
+            "m4.9 4.9 14.2 14.2",
+        )
+    }
+
+    val Flag by lazy {
+        lucideIcon(
+            "Flag",
+            "M4 15s1-1 4-1 5 2 8 0V3s-3 2-8 0-8 0-8 0z",
+            "M4 22v-7",
+        )
+    }
+
     val Plus by lazy {
         lucideIcon("Plus", "M5 12h14", "M12 5v14")
     }

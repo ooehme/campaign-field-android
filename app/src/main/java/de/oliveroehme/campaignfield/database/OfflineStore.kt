@@ -5,6 +5,7 @@ import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import de.oliveroehme.campaignfield.domain.SyncEventKind
 import de.oliveroehme.campaignfield.domain.SyncFailureKind
 import de.oliveroehme.campaignfield.domain.SyncQueueItem
@@ -36,11 +37,23 @@ interface OfflineStore {
     suspend fun storeAssignments(page: AssignmentPage)
     suspend fun storeAssignment(detail: AssignmentDetail)
     suspend fun storeAssignmentMapData(id: String, mapData: AssignmentMapData)
+    suspend fun updateAssignmentBuildingStatus(
+        assignmentId: String,
+        buildingId: String,
+        status: BuildingStatus,
+    )
 
     suspend fun enqueueAssignmentStatusUpdate(
         assignmentId: String,
         previousStatus: AssignmentStatus,
         targetStatus: AssignmentStatus,
+    ): SyncQueueItem
+
+    suspend fun enqueueAssignmentBuildingStatusUpdate(
+        assignmentId: String,
+        buildingId: String,
+        previousStatus: BuildingStatus,
+        targetStatus: BuildingStatus,
     ): SyncQueueItem
 
     suspend fun readPendingQueue(): List<SyncQueueItem>
@@ -76,7 +89,9 @@ class RoomOfflineStore(
     ) { entity, queue -> entity?.let { decodeDetail(it, queue) } }
 
     override fun observeAssignmentMapData(id: String): Flow<CachedValue<AssignmentMapData>?> =
-        dao.observeAssignment(id).map { entity -> entity?.let(::decodeMapData) }
+        combine(dao.observeAssignment(id), dao.observeQueue()) { entity, queue ->
+            entity?.let { decodeMapData(it, queue) }
+        }
 
     override fun observeOfflineReadyAssignmentIds(): Flow<Set<String>> =
         dao.observeOfflineReadyAssignmentIds().map(List<String>::toSet)
@@ -91,7 +106,7 @@ class RoomOfflineStore(
         dao.readAssignment(id)?.let { decodeDetail(it, dao.readQueue()) }
 
     override suspend fun readAssignmentMapData(id: String): CachedValue<AssignmentMapData>? =
-        dao.readAssignment(id)?.let(::decodeMapData)
+        dao.readAssignment(id)?.let { decodeMapData(it, dao.readQueue()) }
 
     override suspend fun storeAssignments(page: AssignmentPage) {
         val now = clock()
@@ -128,6 +143,25 @@ class RoomOfflineStore(
         )
     }
 
+    override suspend fun updateAssignmentBuildingStatus(
+        assignmentId: String,
+        buildingId: String,
+        status: BuildingStatus,
+    ) {
+        val existing = dao.readAssignment(assignmentId) ?: return
+        val mapData = decodeMapData(existing, emptyList())?.value ?: return
+        val nextFeatures = mapData.features.map { feature ->
+            if (feature.id == buildingId) feature.copy(status = status) else feature
+        }
+        if (nextFeatures == mapData.features) return
+        dao.storeAssignment(
+            existing.copy(
+                mapDataJson = json.encodeToString(mapData.copy(features = nextFeatures)),
+                cachedAtEpochMillis = clock(),
+            ),
+        )
+    }
+
     override suspend fun enqueueAssignmentStatusUpdate(
         assignmentId: String,
         previousStatus: AssignmentStatus,
@@ -138,6 +172,33 @@ class RoomOfflineStore(
             id = UUID.randomUUID().toString(),
             assignmentId = assignmentId,
             kind = SyncEventKind.ASSIGNMENT_STATUS_UPDATE.name,
+            targetStatus = targetStatus.apiValue,
+            previousStatus = previousStatus.apiValue,
+            status = SyncQueueStatus.PENDING.name,
+            attempts = 0,
+            createdAtEpochMillis = now,
+            updatedAtEpochMillis = now,
+            lastAttemptAtEpochMillis = null,
+            syncedAtEpochMillis = null,
+            failureKind = null,
+            lastError = null,
+        )
+        dao.insertQueueEvent(entity)
+        return requireNotNull(decodeQueueItem(entity))
+    }
+
+    override suspend fun enqueueAssignmentBuildingStatusUpdate(
+        assignmentId: String,
+        buildingId: String,
+        previousStatus: BuildingStatus,
+        targetStatus: BuildingStatus,
+    ): SyncQueueItem {
+        val now = clock()
+        val entity = SyncQueueEntity(
+            id = UUID.randomUUID().toString(),
+            assignmentId = assignmentId,
+            subjectId = buildingId,
+            kind = SyncEventKind.ASSIGNMENT_BUILDING_UPDATE.name,
             targetStatus = targetStatus.apiValue,
             previousStatus = previousStatus.apiValue,
             status = SyncQueueStatus.PENDING.name,
@@ -239,7 +300,8 @@ class RoomOfflineStore(
                 runCatching { json.decodeFromString<AssignmentDetail>(encoded) }.getOrNull()
             }
             ?: runCatching {
-                AssignmentDetail(json.decodeFromString<AssignmentSummary>(entity.summaryJson))
+                val summary = json.decodeFromString<AssignmentSummary>(entity.summaryJson)
+                AssignmentDetail(summary = summary, permissions = summary.permissions)
             }.getOrNull()
             ?: return null
         val overlay = pendingStatusOverlays(queue)[entity.assignmentId]
@@ -249,14 +311,41 @@ class RoomOfflineStore(
         )
     }
 
-    private fun decodeMapData(entity: AssignmentCacheEntity): CachedValue<AssignmentMapData>? {
+    private fun decodeMapData(
+        entity: AssignmentCacheEntity,
+        queue: List<SyncQueueEntity>,
+    ): CachedValue<AssignmentMapData>? {
         val value = entity.mapDataJson
             ?.let { encoded ->
                 runCatching { json.decodeFromString<AssignmentMapData>(encoded) }.getOrNull()
             }
             ?: return null
-        return CachedValue(value, entity.cachedAtEpochMillis)
+        val overlays = pendingBuildingStatusOverlays(entity.assignmentId, queue)
+        val effectiveValue = if (overlays.isEmpty()) value else value.copy(
+            features = value.features.map { feature ->
+                overlays[feature.id]?.let { status ->
+                    feature.copy(status = status, isPendingSync = true)
+                } ?: feature
+            },
+        )
+        return CachedValue(effectiveValue, entity.cachedAtEpochMillis)
     }
+
+    private fun pendingBuildingStatusOverlays(
+        assignmentId: String,
+        queue: List<SyncQueueEntity>,
+    ): Map<String, BuildingStatus> = queue.asSequence()
+        .filter { it.assignmentId == assignmentId }
+        .filter { it.kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE.name }
+        .filter { it.status == SyncQueueStatus.PENDING.name || it.status == SyncQueueStatus.SYNCING.name }
+        .sortedBy(SyncQueueEntity::createdAtEpochMillis)
+        .mapNotNull { event ->
+            val buildingId = event.subjectId ?: return@mapNotNull null
+            BuildingStatus.fromApi(event.targetStatus)
+                .takeUnless { it == BuildingStatus.UNKNOWN }
+                ?.let { buildingId to it }
+        }
+        .toMap()
 
     private fun pendingStatusOverlays(queue: List<SyncQueueEntity>): Map<String, AssignmentStatus> =
         queue.asSequence()
@@ -274,12 +363,24 @@ class RoomOfflineStore(
         if (status == null || this.status == status) this else copy(status = status)
 
     private fun decodeQueueItem(entity: SyncQueueEntity): SyncQueueItem? = runCatching {
+        val kind = SyncEventKind.valueOf(entity.kind)
         SyncQueueItem(
             id = entity.id,
             assignmentId = entity.assignmentId,
-            kind = SyncEventKind.valueOf(entity.kind),
-            targetStatus = AssignmentStatus.fromApi(entity.targetStatus),
-            previousStatus = AssignmentStatus.fromApi(entity.previousStatus),
+            kind = kind,
+            targetStatus = if (kind == SyncEventKind.ASSIGNMENT_STATUS_UPDATE) {
+                AssignmentStatus.fromApi(entity.targetStatus)
+            } else AssignmentStatus.UNKNOWN,
+            previousStatus = if (kind == SyncEventKind.ASSIGNMENT_STATUS_UPDATE) {
+                AssignmentStatus.fromApi(entity.previousStatus)
+            } else AssignmentStatus.UNKNOWN,
+            buildingId = entity.subjectId,
+            targetBuildingStatus = if (kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE) {
+                BuildingStatus.fromApi(entity.targetStatus)
+            } else null,
+            previousBuildingStatus = if (kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE) {
+                BuildingStatus.fromApi(entity.previousStatus)
+            } else null,
             status = SyncQueueStatus.valueOf(entity.status),
             attempts = entity.attempts,
             createdAtEpochMillis = entity.createdAtEpochMillis,

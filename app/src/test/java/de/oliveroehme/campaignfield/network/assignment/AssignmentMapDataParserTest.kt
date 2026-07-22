@@ -1,6 +1,7 @@
 package de.oliveroehme.campaignfield.network.assignment
 
 import de.oliveroehme.campaignfield.domain.AssignmentMapFeatureKind
+import de.oliveroehme.campaignfield.domain.BuildingStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,5 +54,15 @@ class AssignmentMapDataParserTest {
         assertEquals(1, page.features.size)
         assertEquals("17", page.features.single().id)
         assertTrue(page.features.single().geometryGeoJson.contains("Polygon"))
+    }
+
+    @Test
+    fun `parses building status and update permission`() {
+        val page = parser.parseBuildings(
+            """{"data":[{"id":17,"status":"blocked","can":{"update":true},"geometry":{"type":"Point","coordinates":[12,50]}}]}""",
+        )
+
+        assertEquals(BuildingStatus.BLOCKED, page.features.single().status)
+        assertTrue(page.features.single().canUpdate)
     }
 }

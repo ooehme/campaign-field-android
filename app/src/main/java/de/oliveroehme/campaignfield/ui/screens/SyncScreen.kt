@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import de.oliveroehme.campaignfield.domain.SyncQueueItem
 import de.oliveroehme.campaignfield.domain.SyncQueueStatus
+import de.oliveroehme.campaignfield.domain.SyncEventKind
 import de.oliveroehme.campaignfield.ui.components.FieldActionButton
 import de.oliveroehme.campaignfield.ui.components.FieldButtonVariant
 import de.oliveroehme.campaignfield.ui.components.FieldEmptyState
@@ -148,7 +149,14 @@ private fun SyncEventCard(
         }
         Text(
             modifier = Modifier.padding(top = 12.dp),
-            text = "Status: ${event.previousStatus.displayName} → ${event.targetStatus.displayName}",
+            text = when (event.kind) {
+                SyncEventKind.ASSIGNMENT_STATUS_UPDATE ->
+                    "Status: ${event.previousStatus.displayName} → ${event.targetStatus.displayName}"
+                SyncEventKind.ASSIGNMENT_BUILDING_UPDATE ->
+                    "Gebäude #${event.buildingId}: " +
+                        "${event.previousBuildingStatus?.displayName} → " +
+                        event.targetBuildingStatus?.displayName
+            },
             color = FieldWhite,
             style = MaterialTheme.typography.bodyMedium,
         )

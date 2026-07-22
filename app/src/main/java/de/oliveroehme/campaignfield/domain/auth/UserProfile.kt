@@ -1,6 +1,7 @@
 package de.oliveroehme.campaignfield.domain.auth
 
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
+import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -28,7 +29,11 @@ data class UserPermissions(
 )
 
 fun UserProfile.leadsAssignmentTeam(assignment: AssignmentDetail): Boolean {
-    val teamId = assignment.summary.team?.id ?: return false
+    return leadsAssignmentTeam(assignment.summary)
+}
+
+fun UserProfile.leadsAssignmentTeam(assignment: AssignmentSummary): Boolean {
+    val teamId = assignment.team?.id ?: return false
     return teams.any { membership ->
         membership.teamId == teamId && membership.role.isTeamLeadRole()
     }

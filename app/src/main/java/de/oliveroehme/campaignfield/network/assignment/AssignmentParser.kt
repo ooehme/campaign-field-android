@@ -141,6 +141,7 @@ internal class AssignmentParser(
             campaign = campaign,
             team = team,
             area = area,
+            permissions = parsePermissions(assignment["can"] as? JsonObject),
         )
     }
 

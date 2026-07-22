@@ -17,6 +17,7 @@ data class AssignmentSummary(
     val campaign: CampaignSummary? = null,
     val team: TeamSummary? = null,
     val area: AreaSummary? = null,
+    val permissions: AssignmentPermissions = AssignmentPermissions(),
 )
 
 @Serializable
@@ -120,24 +121,51 @@ enum class AssignmentStatus(
     }
 }
 
-fun AssignmentDetail.availableStatusActions(): List<AssignmentStatusAction> = when (summary.status) {
+fun AssignmentDetail.availableStatusActions(): List<AssignmentStatusAction> =
+    statusActions(summary.status, permissions)
+
+fun AssignmentSummary.availableStatusActions(): List<AssignmentStatusAction> =
+    statusActions(status, permissions)
+
+private fun statusActions(
+    status: AssignmentStatus,
+    permissions: AssignmentPermissions,
+): List<AssignmentStatusAction> = when (status) {
     AssignmentStatus.DRAFT -> buildList {
         if (permissions.update) add(AssignmentStatusAction("Bereit setzen", AssignmentStatus.READY))
-        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        if (permissions.cancel || permissions.update) {
+            add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        }
     }
     AssignmentStatus.READY -> buildList {
-        if (permissions.start) add(AssignmentStatusAction("Starten", AssignmentStatus.ACTIVE))
-        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        if (permissions.start || permissions.update) {
+            add(AssignmentStatusAction("Starten", AssignmentStatus.ACTIVE))
+        }
+        if (permissions.cancel || permissions.update) {
+            add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        }
     }
     AssignmentStatus.ACTIVE -> buildList {
-        if (permissions.pause) add(AssignmentStatusAction("Pausieren", AssignmentStatus.PAUSED))
-        if (permissions.complete) add(AssignmentStatusAction("Abschließen", AssignmentStatus.COMPLETED))
-        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        if (permissions.pause || permissions.update) {
+            add(AssignmentStatusAction("Pausieren", AssignmentStatus.PAUSED))
+        }
+        if (permissions.complete || permissions.update) {
+            add(AssignmentStatusAction("Abschließen", AssignmentStatus.COMPLETED))
+        }
+        if (permissions.cancel || permissions.update) {
+            add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        }
     }
     AssignmentStatus.PAUSED -> buildList {
-        if (permissions.start) add(AssignmentStatusAction("Fortsetzen", AssignmentStatus.ACTIVE))
-        if (permissions.complete) add(AssignmentStatusAction("Abschließen", AssignmentStatus.COMPLETED))
-        if (permissions.cancel) add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        if (permissions.start || permissions.update) {
+            add(AssignmentStatusAction("Fortsetzen", AssignmentStatus.ACTIVE))
+        }
+        if (permissions.complete || permissions.update) {
+            add(AssignmentStatusAction("Abschließen", AssignmentStatus.COMPLETED))
+        }
+        if (permissions.cancel || permissions.update) {
+            add(AssignmentStatusAction("Abbrechen", AssignmentStatus.CANCELLED))
+        }
     }
     AssignmentStatus.COMPLETED,
     AssignmentStatus.CANCELLED,
