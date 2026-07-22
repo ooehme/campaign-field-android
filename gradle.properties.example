@@ -2,3 +2,4 @@
 # Never commit production credentials, cookies, passwords, or private hosts.
 CAMPAIGN_FIELD_API_BASE_URL=https://example.invalid/api
 CAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN=https://example.invalid
+CAMPAIGN_FIELD_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/dark

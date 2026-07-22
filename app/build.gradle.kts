@@ -36,6 +36,13 @@ val sanctumClientOrigin = configuredProperty(
 val escapedSanctumClientOrigin = sanctumClientOrigin.map {
     it.replace("\\", "\\\\").replace("\"", "\\\"")
 }
+val mapStyleUrl = configuredProperty(
+    "CAMPAIGN_FIELD_MAP_STYLE_URL",
+    "https://tiles.openfreemap.org/styles/dark",
+).map { it.trim() }
+val escapedMapStyleUrl = mapStyleUrl.map {
+    it.replace("\\", "\\\\").replace("\"", "\\\"")
+}
 
 android {
     namespace = "de.oliveroehme.campaignfield"
@@ -54,6 +61,7 @@ android {
             "SANCTUM_CLIENT_ORIGIN",
             "\"${escapedSanctumClientOrigin.get()}\"",
         )
+        buildConfigField("String", "MAP_STYLE_URL", "\"${escapedMapStyleUrl.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -4,7 +4,9 @@ import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
+import de.oliveroehme.campaignfield.domain.AreaSummary
 import de.oliveroehme.campaignfield.domain.TeamSummary
+import de.oliveroehme.campaignfield.map.FieldGeoJson
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -86,7 +88,7 @@ class AssignmentHttpClient internal constructor(
             when (val response = execute(configuration.apiEndpointSegments("assignments", id))) {
                 is RawResponse.Success -> runCatching { parser.parseDetail(response.body) }
                     .fold(
-                        onSuccess = { AssignmentResult.Success(it) },
+                        onSuccess = { AssignmentResult.Success(enrichTargetArea(it)) },
                         onFailure = { AssignmentResult.Failure(AssignmentFailure.invalidResponse()) },
                     )
                 is RawResponse.HttpFailure -> AssignmentResult.Failure(
@@ -95,6 +97,46 @@ class AssignmentHttpClient internal constructor(
                 RawResponse.TransportFailure -> AssignmentResult.Failure(AssignmentFailure.network())
             }
         }
+
+    private fun enrichTargetArea(detail: AssignmentDetail): AssignmentDetail {
+        val original = detail.summary.area ?: return detail
+        if (FieldGeoJson.positions(original.geoJson).isNotEmpty()) return detail
+        val areaId = original.id ?: return detail
+
+        val direct = when (val response = execute(configuration.apiEndpointSegments("areas", areaId))) {
+            is RawResponse.Success -> runCatching { parser.parseArea(response.body) }.getOrNull()
+            else -> null
+        }
+        var resolved = original.merge(direct)
+        if (FieldGeoJson.positions(resolved.geoJson).isEmpty()) {
+            val campaignId = detail.summary.campaign?.id
+            if (!campaignId.isNullOrBlank()) {
+                val url = configuration.apiEndpointSegments("campaigns", campaignId, "areas")
+                    .newBuilder()
+                    .addQueryParameter("per_page", PAGE_SIZE.toString())
+                    .build()
+                val campaignArea = when (val response = execute(url)) {
+                    is RawResponse.Success -> runCatching { parser.parseAreas(response.body) }
+                        .getOrNull()
+                        ?.firstOrNull { it.id == areaId }
+                    else -> null
+                }
+                resolved = resolved.merge(campaignArea)
+            }
+        }
+        return detail.copy(summary = detail.summary.copy(area = resolved))
+    }
+
+    private fun AreaSummary.merge(fallback: AreaSummary?): AreaSummary = if (fallback == null) {
+        this
+    } else {
+        copy(
+            name = fallback.name.takeUnless { it.startsWith("Zielgebiet #") } ?: name,
+            geoJson = fallback.geoJson ?: geoJson,
+            centerLatitude = fallback.centerLatitude ?: centerLatitude,
+            centerLongitude = fallback.centerLongitude ?: centerLongitude,
+        )
+    }
 
     override suspend fun updateAssignmentStatus(
         id: String,

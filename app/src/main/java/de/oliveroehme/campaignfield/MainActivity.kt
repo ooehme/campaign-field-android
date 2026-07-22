@@ -28,6 +28,10 @@ class MainActivity : ComponentActivity() {
                     coreApiHealthSource = application.appContainer.coreApiHealthSource,
                     locationSessionState = application.appContainer.locationSessionState,
                     currentLocationRequester = application.appContainer.currentLocationRequester,
+                    locationSource = application.appContainer.locationSource,
+                    compassSource = application.appContainer.compassSource,
+                    networkStateProvider = application.appContainer.networkStateProvider,
+                    mapConfiguration = application.appContainer.mapConfiguration,
                 )
             }
         }

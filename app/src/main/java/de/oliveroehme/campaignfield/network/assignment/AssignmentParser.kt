@@ -10,6 +10,7 @@ import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentType
 import de.oliveroehme.campaignfield.domain.CampaignSummary
 import de.oliveroehme.campaignfield.domain.TeamSummary
+import de.oliveroehme.campaignfield.map.FieldGeoJson
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -76,6 +77,30 @@ internal class AssignmentParser(
         )
     }
 
+    fun parseArea(payload: String): AreaSummary {
+        val root = json.parseToJsonElement(payload)
+        val area = ((root as? JsonObject)?.get("data") as? JsonObject)
+            ?: root as? JsonObject
+            ?: throw IllegalArgumentException("Zielgebiet ist kein Objekt.")
+        return parseAreaObject(area)
+    }
+
+    fun parseAreas(payload: String): List<AreaSummary> {
+        val root = json.parseToJsonElement(payload)
+        val rootObject = root as? JsonObject
+        val nestedData = rootObject?.get("data") as? JsonObject
+        val values = when (root) {
+            is JsonArray -> root
+            is JsonObject -> root["data"] as? JsonArray
+                ?: nestedData?.get("data") as? JsonArray
+                ?: root["areas"] as? JsonArray
+            else -> null
+        } ?: throw IllegalArgumentException("Zielgebietsliste fehlt.")
+        return values.mapNotNull { value ->
+            (value as? JsonObject)?.let { runCatching { parseAreaObject(it) }.getOrNull() }
+        }
+    }
+
     private fun parseSummary(assignment: JsonObject): AssignmentSummary {
         val id = assignment.text("id")
             ?: assignment.text("assignment_id")
@@ -94,13 +119,12 @@ internal class AssignmentParser(
             labelKeys = arrayOf("name", "label"),
             fallbackPrefix = "Team",
         )?.let { TeamSummary(it.id, it.name) }
-        val area = relation(
-            assignment = assignment,
-            objectKeys = arrayOf("target_area", "area"),
-            idKeys = arrayOf("target_area_id", "area_id"),
-            labelKeys = arrayOf("name", "label"),
-            fallbackPrefix = "Zielgebiet",
-        )?.let { AreaSummary(it.id, it.name) }
+        val areaObject = (assignment["target_area"] as? JsonObject)
+            ?: (assignment["area"] as? JsonObject)
+        val area = areaObject?.let(::parseAreaObject)
+            ?: assignment.firstText("target_area_id", "area_id")?.let { id ->
+                AreaSummary(id = id, name = "Zielgebiet #$id")
+            }
         return AssignmentSummary(
             id = id,
             title = assignment.text("title")
@@ -117,6 +141,21 @@ internal class AssignmentParser(
             campaign = campaign,
             team = team,
             area = area,
+        )
+    }
+
+    private fun parseAreaObject(area: JsonObject): AreaSummary {
+        val id = area.text("id") ?: area.text("area_id")
+        val name = area.firstText("name", "label") ?: "Zielgebiet #${id ?: "?"}"
+        val geoJson = AREA_GEOMETRY_KEYS.firstNotNullOfOrNull { key ->
+            FieldGeoJson.normalize(area[key])
+        }
+        return AreaSummary(
+            id = id,
+            name = name,
+            geoJson = geoJson,
+            centerLatitude = area.coordinate("center_latitude", "latitude", "lat"),
+            centerLongitude = area.coordinate("center_longitude", "longitude", "lng", "lon"),
         )
     }
 
@@ -193,6 +232,10 @@ internal class AssignmentParser(
         ?.trim()
         ?.takeIf(String::isNotEmpty)
 
+    private fun JsonObject.coordinate(vararg keys: String): Double? = keys.firstNotNullOfOrNull { key ->
+        text(key)?.replace(',', '.')?.toDoubleOrNull()
+    }?.takeIf(Double::isFinite)
+
     private data class Relation(val id: String?, val name: String)
 
     private companion object {
@@ -211,5 +254,6 @@ internal class AssignmentParser(
             "title",
             "description",
         )
+        val AREA_GEOMETRY_KEYS = listOf("geometry", "geojson", "geo_json", "geometry_json")
     }
 }

@@ -16,6 +16,10 @@ import de.oliveroehme.campaignfield.data.auth.AuthState
 import de.oliveroehme.campaignfield.data.sync.SyncRepository
 import de.oliveroehme.campaignfield.location.AndroidCurrentLocationRequester
 import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
+import de.oliveroehme.campaignfield.location.LocationSource
+import de.oliveroehme.campaignfield.location.CompassSource
+import de.oliveroehme.campaignfield.map.MapConfiguration
+import de.oliveroehme.campaignfield.network.NetworkStateProvider
 import de.oliveroehme.campaignfield.network.CoreApiHealthSource
 import de.oliveroehme.campaignfield.network.CoreApiStatus
 import de.oliveroehme.campaignfield.ui.navigation.AppDestination
@@ -37,6 +41,10 @@ fun CampaignFieldApp(
     coreApiHealthSource: CoreApiHealthSource,
     locationSessionState: InMemoryLocationSessionState,
     currentLocationRequester: AndroidCurrentLocationRequester,
+    locationSource: LocationSource,
+    compassSource: CompassSource,
+    networkStateProvider: NetworkStateProvider,
+    mapConfiguration: MapConfiguration,
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val loginFeedback by viewModel.loginFeedback.collectAsStateWithLifecycle()
@@ -61,6 +69,10 @@ fun CampaignFieldApp(
                 coreApiHealthSource = coreApiHealthSource,
                 locationSessionState = locationSessionState,
                 currentLocationRequester = currentLocationRequester,
+                locationSource = locationSource,
+                compassSource = compassSource,
+                networkStateProvider = networkStateProvider,
+                mapConfiguration = mapConfiguration,
                 isRefreshingProfile = isRefreshingProfile,
                 isLoggingOut = false,
                 onRefreshProfile = viewModel::refreshProfile,
@@ -73,6 +85,10 @@ fun CampaignFieldApp(
                 coreApiHealthSource = coreApiHealthSource,
                 locationSessionState = locationSessionState,
                 currentLocationRequester = currentLocationRequester,
+                locationSource = locationSource,
+                compassSource = compassSource,
+                networkStateProvider = networkStateProvider,
+                mapConfiguration = mapConfiguration,
                 isRefreshingProfile = isRefreshingProfile,
                 isLoggingOut = true,
                 onRefreshProfile = viewModel::refreshProfile,
@@ -90,6 +106,10 @@ private fun AuthenticatedApp(
     coreApiHealthSource: CoreApiHealthSource,
     locationSessionState: InMemoryLocationSessionState,
     currentLocationRequester: AndroidCurrentLocationRequester,
+    locationSource: LocationSource,
+    compassSource: CompassSource,
+    networkStateProvider: NetworkStateProvider,
+    mapConfiguration: MapConfiguration,
     isRefreshingProfile: Boolean,
     isLoggingOut: Boolean,
     onRefreshProfile: () -> Unit,
@@ -136,6 +156,12 @@ private fun AuthenticatedApp(
             profile = state.profile,
             assignmentRepository = assignmentRepository,
             syncRepository = syncRepository,
+            mapConfiguration = mapConfiguration,
+            locationAccessState = locationAccessState,
+            locationSessionState = locationSessionState,
+            locationSource = locationSource,
+            compassSource = compassSource,
+            networkStateProvider = networkStateProvider,
             isRefreshingProfile = isRefreshingProfile,
             isLoggingOut = isLoggingOut,
             onRefreshProfile = onRefreshProfile,

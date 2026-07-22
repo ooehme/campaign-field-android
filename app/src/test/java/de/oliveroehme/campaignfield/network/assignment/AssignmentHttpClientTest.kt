@@ -106,6 +106,48 @@ class AssignmentHttpClientTest {
         assertEquals("""{"status":"paused"}""", request.body.readUtf8())
     }
 
+    @Test
+    fun `loads missing target area geometry from canonical area route`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"data":{"id":9,"title":"Detail","status":"active","target_area_id":4,"campaign_id":2}}""",
+            ),
+        )
+        server.enqueue(
+            jsonResponse(
+                """{"data":{"id":4,"name":"Altstadt","geometry":{"type":"Polygon","coordinates":[[[11.1,51.1],[11.2,51.1],[11.1,51.1]]]}}}""",
+            ),
+        )
+
+        val result = client.loadAssignment("9") as AssignmentResult.Success
+
+        assertTrue(result.value.summary.area?.geoJson?.contains("Polygon") == true)
+        assertEquals("/api/assignments/9", server.takeRequest().path)
+        assertEquals("/api/areas/4", server.takeRequest().path)
+    }
+
+    @Test
+    fun `uses campaign areas when direct area has no geometry`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"data":{"id":9,"title":"Detail","status":"active","target_area_id":4,"campaign_id":2}}""",
+            ),
+        )
+        server.enqueue(jsonResponse("""{"data":{"id":4,"name":"Altstadt"}}"""))
+        server.enqueue(
+            jsonResponse(
+                """{"data":[{"id":4,"geometry_json":{"type":"Point","coordinates":[11.2,51.2]}}]}""",
+            ),
+        )
+
+        val result = client.loadAssignment("9") as AssignmentResult.Success
+
+        assertTrue(result.value.summary.area?.geoJson?.contains("Point") == true)
+        server.takeRequest()
+        server.takeRequest()
+        assertEquals("/api/campaigns/2/areas?per_page=100", server.takeRequest().path)
+    }
+
     private fun jsonResponse(body: String): MockResponse = MockResponse()
         .setResponseCode(200)
         .addHeader("Content-Type", "application/json")

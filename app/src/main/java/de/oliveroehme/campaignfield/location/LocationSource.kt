@@ -3,7 +3,10 @@ package de.oliveroehme.campaignfield.location
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.LocationManager
+import android.location.LocationListener
+import android.os.Bundle
 import android.os.CancellationSignal
+import android.os.Looper
 import androidx.core.location.LocationManagerCompat
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
@@ -13,6 +16,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 
 data class LocationSample(
     val latitude: Double,
@@ -22,6 +27,63 @@ data class LocationSample(
 
 interface LocationSource {
     val locations: Flow<LocationSample>
+}
+
+class AndroidLocationSource(context: Context) : LocationSource {
+    private val locationManager = context.applicationContext
+        .getSystemService(LocationManager::class.java)
+
+    @SuppressLint("MissingPermission")
+    override val locations: Flow<LocationSample> = callbackFlow {
+        val manager = locationManager
+        val provider = manager?.let(::enabledProvider)
+        if (manager == null || provider == null) {
+            close(IllegalStateException("Standort ist nicht verfügbar."))
+            return@callbackFlow
+        }
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: android.location.Location) {
+                trySend(
+                    LocationSample(
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        accuracyMeters = location.accuracy,
+                    ),
+                )
+            }
+
+            override fun onProviderDisabled(provider: String) = Unit
+            override fun onProviderEnabled(provider: String) = Unit
+            @Deprecated("Deprecated by Android")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+        }
+        try {
+            manager.requestLocationUpdates(
+                provider,
+                LOCATION_UPDATE_INTERVAL_MS,
+                LOCATION_UPDATE_DISTANCE_METERS,
+                listener,
+                Looper.getMainLooper(),
+            )
+        } catch (error: SecurityException) {
+            close(error)
+            return@callbackFlow
+        }
+        awaitClose { manager.removeUpdates(listener) }
+    }
+
+    private fun enabledProvider(manager: LocationManager): String? = when {
+        runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false) ->
+            LocationManager.GPS_PROVIDER
+        runCatching { manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false) ->
+            LocationManager.NETWORK_PROVIDER
+        else -> null
+    }
+
+    private companion object {
+        const val LOCATION_UPDATE_INTERVAL_MS = 2_000L
+        const val LOCATION_UPDATE_DISTANCE_METERS = 1f
+    }
 }
 
 class AndroidCurrentLocationRequester(context: Context) {

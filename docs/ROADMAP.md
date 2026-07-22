@@ -1,7 +1,7 @@
 # Roadmap
 
-Status: Phasen 1 bis 4 abgeschlossen; der Assignment-Teil von Phase 7 ist vorgezogen
-umgesetzt. Karten- und Standortfunktionen beginnen mit Phase 5.
+Status: Phasen 1 bis 5 abgeschlossen; der Assignment-Teil von Phase 7 ist vorgezogen
+umgesetzt. Operative Objekte beginnen mit Phase 6.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -135,6 +135,9 @@ bestätigen.
 
 ## 5. MapLibre-Karte und Standort
 
+**Status:** Abgeschlossen am 22.07.2026; Assignment-Karte, Area-Fallbacks,
+nutzergesteuerter Live-Standort, optionaler Kompass und Basemap-Fehlerpfad sind umgesetzt.
+
 **Vorarbeit:** Die App-Shell prüft `/health` alle 30 Sekunden. Das Standorticon fordert
 auf Nutzeraktion die präzise Standortberechtigung an, öffnet bei deaktiviertem GPS die
 Systemeinstellungen und speichert genau eine ausreichend genaue Position nur im Speicher.
@@ -164,6 +167,12 @@ Rate Limits und fehlender echter Offline-Style.
 
 **Offene Backend-Fragen:** kanonisches GeoJSON/CRS; Style-/Tile-Hosting; Teamstandort-
 Frequenz, TTL und Zustimmung; maximal erlaubte Genauigkeit und `reported_at`-Semantik.
+
+**Ergebnis/Restpunkte:** Die Referenz-Aliase `geometry`, `geojson`, `geo_json` und
+`geometry_json` sowie `/areas/{id}` und der Kampagnen-Area-Fallback werden unterstützt.
+OpenFreeMap Dark ist konfigurierbar; ohne Netz oder Basemap rendert dieselbe MapLibre-Engine
+Zielgebiet und Standort auf einem lokalen Leer-Stil. Teamstandorte folgen erst mit bestätigtem
+Frequenz-, Zustimmungs- und Berechtigungsvertrag.
 
 ## 6. Assignment Buildings und Poster-Standorte
 
@@ -311,5 +320,5 @@ Staging für automatisierte Tests; Release-Health-Endpunkt und Wartungsmodus.
 
 ## Empfohlener nächster Schritt
 
-Phase 5: MapLibre-Karte und nutzerkontrollierten Standort auf Basis der read-only
-Assignment-Details implementieren; Basemap-/Tile- und GeoJSON-Vertrag vorab festlegen.
+Phase 6: Assignment Buildings und Poster-Standorte auf Basis der bestehenden Karte und
+der in der Referenz dokumentierten Ressourcenverträge implementieren.

@@ -85,4 +85,23 @@ class AssignmentParserTest {
         assertEquals(AssignmentType.UNKNOWN, page.items.single().type)
         assertEquals(AssignmentStatus.UNKNOWN, page.items.single().status)
     }
+
+    @Test
+    fun `normalizes reference area geometry aliases and center coordinates`() {
+        val detail = parser.parseDetail(
+            """
+            {"data":{"id":12,"title":"Nord","status":"active","target_area":{
+              "id":4,"label":"Altstadt",
+              "geo_json":"{\"type\":\"Polygon\",\"coordinates\":[[[11.1,51.1],[11.2,51.1],[11.1,51.1]]]}",
+              "center_latitude":"51,15","center_longitude":11.15
+            }}}
+            """.trimIndent(),
+        )
+
+        val area = requireNotNull(detail.summary.area)
+        assertEquals("Altstadt", area.name)
+        assertEquals(51.15, area.centerLatitude!!, 0.0)
+        assertEquals(11.15, area.centerLongitude!!, 0.0)
+        assertTrue(area.geoJson!!.startsWith("{\"type\":\"Polygon\""))
+    }
 }

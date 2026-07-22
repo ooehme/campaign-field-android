@@ -12,6 +12,11 @@ import de.oliveroehme.campaignfield.database.CampaignFieldDatabase
 import de.oliveroehme.campaignfield.database.RoomOfflineStore
 import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
 import de.oliveroehme.campaignfield.location.AndroidCurrentLocationRequester
+import de.oliveroehme.campaignfield.location.AndroidLocationSource
+import de.oliveroehme.campaignfield.location.LocationSource
+import de.oliveroehme.campaignfield.location.AndroidCompassSource
+import de.oliveroehme.campaignfield.location.CompassSource
+import de.oliveroehme.campaignfield.map.MapConfiguration
 import de.oliveroehme.campaignfield.network.ApiConfiguration
 import de.oliveroehme.campaignfield.network.CoreApiHealthClient
 import de.oliveroehme.campaignfield.network.CoreApiHealthSource
@@ -32,6 +37,10 @@ class AppContainer(context: Context) {
     val coreApiHealthSource: CoreApiHealthSource
     val locationSessionState: InMemoryLocationSessionState
     val currentLocationRequester: AndroidCurrentLocationRequester
+    val locationSource: LocationSource
+    val compassSource: CompassSource
+    val networkStateProvider: AndroidNetworkStateProvider
+    val mapConfiguration: MapConfiguration
 
     init {
         val applicationContext = context.applicationContext
@@ -46,6 +55,10 @@ class AppContainer(context: Context) {
         val syncScheduler = WorkManagerSyncScheduler(applicationContext)
         locationSessionState = InMemoryLocationSessionState()
         currentLocationRequester = AndroidCurrentLocationRequester(applicationContext)
+        locationSource = AndroidLocationSource(applicationContext)
+        compassSource = AndroidCompassSource(applicationContext)
+        networkStateProvider = AndroidNetworkStateProvider(applicationContext)
+        mapConfiguration = MapConfiguration.fromBuildConfig()
         val cleaner = AndroidLocalSessionCleaner(
             context = applicationContext,
             cookieJar = cookieJar,
@@ -72,7 +85,7 @@ class AppContainer(context: Context) {
             remote = assignmentRemote,
             offlineStore = offlineStore,
             syncScheduler = syncScheduler,
-            networkStateProvider = AndroidNetworkStateProvider(applicationContext),
+            networkStateProvider = networkStateProvider,
         )
         coreApiHealthSource = CoreApiHealthClient(configuration, httpClient)
     }

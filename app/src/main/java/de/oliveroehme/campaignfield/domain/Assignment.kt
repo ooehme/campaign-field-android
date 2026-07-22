@@ -43,6 +43,9 @@ data class TeamSummary(
 data class AreaSummary(
     val id: String? = null,
     val name: String,
+    val geoJson: String? = null,
+    val centerLatitude: Double? = null,
+    val centerLongitude: Double? = null,
 )
 
 @Serializable

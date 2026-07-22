@@ -22,6 +22,12 @@ import de.oliveroehme.campaignfield.ui.screens.ProfileScreen
 import de.oliveroehme.campaignfield.ui.screens.ProofScreen
 import de.oliveroehme.campaignfield.ui.screens.SyncScreen
 import de.oliveroehme.campaignfield.ui.sync.SyncViewModel
+import de.oliveroehme.campaignfield.location.CompassSource
+import de.oliveroehme.campaignfield.location.InMemoryLocationSessionState
+import de.oliveroehme.campaignfield.location.LocationSource
+import de.oliveroehme.campaignfield.map.MapConfiguration
+import de.oliveroehme.campaignfield.network.NetworkStateProvider
+import de.oliveroehme.campaignfield.ui.status.LocationAccessState
 
 @Composable
 fun CampaignFieldNavHost(
@@ -30,6 +36,12 @@ fun CampaignFieldNavHost(
     profile: UserProfile,
     assignmentRepository: AssignmentRepository,
     syncRepository: SyncRepository,
+    mapConfiguration: MapConfiguration,
+    locationAccessState: LocationAccessState,
+    locationSessionState: InMemoryLocationSessionState,
+    locationSource: LocationSource,
+    compassSource: CompassSource,
+    networkStateProvider: NetworkStateProvider,
     isRefreshingProfile: Boolean,
     isLoggingOut: Boolean,
     onRefreshProfile: () -> Unit,
@@ -100,8 +112,25 @@ fun CampaignFieldNavHost(
         composable(
             route = AppDestination.AssignmentMap.route,
             arguments = listOf(navArgument("assignmentId") { type = NavType.StringType }),
-        ) {
-            MapScreen(contentPadding, includeStatusBarInset = false)
+        ) { backStackEntry ->
+            val assignmentId = requireNotNull(backStackEntry.arguments?.getString("assignmentId"))
+            val viewModel: AssignmentDetailViewModel = viewModel(
+                viewModelStoreOwner = backStackEntry,
+                factory = AssignmentDetailViewModel.factory(assignmentRepository, assignmentId),
+            )
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            MapScreen(
+                contentPadding = contentPadding,
+                includeStatusBarInset = false,
+                assignmentState = state,
+                onRefreshAssignment = viewModel::refresh,
+                configuration = mapConfiguration,
+                locationAccessState = locationAccessState,
+                locationSessionState = locationSessionState,
+                locationSource = locationSource,
+                compassSource = compassSource,
+                networkStateProvider = networkStateProvider,
+            )
         }
         composable(
             route = AppDestination.AssignmentProof.route,
@@ -113,7 +142,18 @@ fun CampaignFieldNavHost(
             )
         }
         composable(AppDestination.Map.route) {
-            MapScreen(contentPadding, includeStatusBarInset = true)
+            MapScreen(
+                contentPadding = contentPadding,
+                includeStatusBarInset = true,
+                assignmentState = null,
+                onRefreshAssignment = {},
+                configuration = mapConfiguration,
+                locationAccessState = locationAccessState,
+                locationSessionState = locationSessionState,
+                locationSource = locationSource,
+                compassSource = compassSource,
+                networkStateProvider = networkStateProvider,
+            )
         }
         composable(AppDestination.Sync.route) {
             val viewModel: SyncViewModel = viewModel(

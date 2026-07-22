@@ -3,7 +3,7 @@
 Native Android-Neuimplementierung der operativen Field-App für `campaign-core`.
 Das Repository enthält ein verifizierbares Projektgerüst, den abgeschlossenen
 Sanctum-Cookie-/CSRF-Spike, den produktiven Login-/Session-Lifecycle sowie Assignment-
-Liste, Details, Statusaktionen und deren Offline-Synchronisierung.
+Liste, Details, Statusaktionen, Offline-Synchronisierung und die operative MapLibre-Karte.
 
 ## Leitplanken
 
@@ -20,9 +20,11 @@ Enthalten sind Login, Session-Wiederherstellung, Profil/Teams, Logout, zentraler
 401-Cleanup, die App-Shell mit echtem API-/Standortstatus sowie Assignment-Liste und
 Assignment-Details mit Pagination, Referenzsortierung und Teamabgleich. Assignment-Daten
 werden in Room gespeichert; Statusänderungen bleiben bei Netzausfall in einer persistenten,
-sichtbaren Queue und werden per WorkManager nach Wiederverbindung synchronisiert. Der technische Sanctum-Nachweis steht in
-[SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt die MapLibre-Karte aus
-Phase 5 der [Roadmap](docs/ROADMAP.md).
+sichtbaren Queue und werden per WorkManager nach Wiederverbindung synchronisiert. Die
+Assignment-Karte zeigt Zielgebiete, optionalen Live-Standort und Geräte-Bearing; bei
+Basemapfehlern bleibt sie mit lokalem Leer-Stil nutzbar. Der technische Sanctum-Nachweis
+steht in [SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt Phase 6 der
+[Roadmap](docs/ROADMAP.md).
 
 Die Analyse der PWA-Referenz ist in [API-MAPPING.md](docs/API-MAPPING.md) dokumentiert.
 Architektur und Sicherheitskonzept stehen in [ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -49,11 +51,13 @@ oder in CI als Gradle-Property gesetzt:
 ```properties
 CAMPAIGN_FIELD_API_BASE_URL=https://example.invalid/api
 CAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN=https://example.invalid
+CAMPAIGN_FIELD_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/dark
 ```
 
 Beispiel: [gradle.properties.example](gradle.properties.example). Produktive URLs,
 Zugangsdaten und Session-Werte gehören nicht in Versionskontrolle. Die Properties werden
 als `BuildConfig`-Werte kompiliert und enthalten ausdrücklich kein Auth-Material. Die
+Kartenstil-URL ist optional und verwendet standardmäßig OpenFreeMap Dark. Die
 Sanctum-Client-Origin ist die serverseitig freigegebene Stateful-Origin; Requests selbst
 bleiben strikt auf die Origin der API-Basis-URL begrenzt.
 
