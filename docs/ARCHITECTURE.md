@@ -77,7 +77,9 @@ sondern als fachlich typisierte Felder persistiert.
 WorkManager verarbeitet nur Requests mit Netzwerk-Constraint. 401 stoppt den Lauf,
 403/409/422 werden dauerhaft sichtbar `failed`, 5xx und Transportfehler bleiben `pending`
 und verwenden Backoff. Erfolgreiche Events werden erst nach lokalem Merge als `synced` markiert.
-`client_event_key` beziehungsweise ein final abgestimmter Idempotency-Key schützt Retries.
+Gebäude-Retries sind mit stabiler Queue-ID (`client_event_key`) idempotent; `updated_at`
+liefert Optimistic Locking mit 409. Für Poster- und Aktionsstand-POSTs fehlt diese
+Servergarantie noch.
 
 ## Karten, Standort und Sensoren
 

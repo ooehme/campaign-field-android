@@ -36,6 +36,11 @@ internal class AssignmentMapDataParser(
         nestedKeys = listOf("poster_locations", "posters"),
     )
 
+    fun parseBuilding(payload: String): AssignmentMapFeature = parseSingle(
+        payload,
+        AssignmentMapFeatureKind.BUILDING,
+    )
+
     fun parsePoster(payload: String): AssignmentMapFeature = parseSingle(
         payload,
         AssignmentMapFeatureKind.POSTER,
@@ -128,6 +133,7 @@ internal class AssignmentMapDataParser(
             canDelete = can?.boolean("delete") == true,
             label = label,
             note = item.text("notes") ?: item.text("note"),
+            serverUpdatedAt = item.text("updated_at"),
         )
     }
 

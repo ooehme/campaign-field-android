@@ -330,16 +330,23 @@ class DefaultAssignmentRepository(
         if (!networkStateProvider.isOnline()) {
             return queueBuildingStatusChange(assignment, building, targetStatus)
         }
-        return when (val result = remote.updateAssignmentBuildingStatus(building.id, targetStatus)) {
+        return when (
+            val result = remote.updateAssignmentBuildingStatus(
+                building.id,
+                targetStatus,
+                knownUpdatedAt = building.serverUpdatedAt,
+            )
+        ) {
             is AssignmentResult.Success -> {
-                offlineStore?.updateAssignmentBuildingStatus(
+                val updated = result.value ?: building.copy(status = targetStatus)
+                offlineStore?.mergeAssignmentMapFeature(
                     assignment.summary.id,
                     building.id,
-                    targetStatus,
+                    updated,
                 )
                 AssignmentResult.Success(
                     AssignmentBuildingStatusChange(
-                        building.copy(status = targetStatus),
+                        updated,
                         queued = false,
                     ),
                 )
@@ -395,11 +402,19 @@ class DefaultAssignmentRepository(
                 id = building.id,
                 notes = notes,
                 includeNotes = true,
+                knownUpdatedAt = building.serverUpdatedAt,
             )
         ) {
             is AssignmentResult.Success -> {
-                offlineStore?.mergeAssignmentMapFeature(assignment.summary.id, building.id, updated)
-                AssignmentResult.Success(AssignmentMapFeatureChange(updated, queued = false))
+                val serverFeature = result.value ?: updated
+                offlineStore?.mergeAssignmentMapFeature(
+                    assignment.summary.id,
+                    building.id,
+                    serverFeature,
+                )
+                AssignmentResult.Success(
+                    AssignmentMapFeatureChange(serverFeature, queued = false),
+                )
             }
             is AssignmentResult.Failure -> if (result.failure.kind.isRetryableMutation()) {
                 queueMapFeature(
@@ -587,17 +602,18 @@ class DefaultAssignmentRepository(
         targetStatus: BuildingStatus,
     ): AssignmentResult<AssignmentBuildingStatusChange> {
         val store = offlineStore ?: return AssignmentResult.Failure(AssignmentFailure.network())
-        store.enqueueAssignmentBuildingStatusUpdate(
+        val updated = building.copy(status = targetStatus, isPendingSync = true)
+        store.enqueueAssignmentMapFeatureMutation(
             assignmentId = assignment.summary.id,
-            buildingId = building.id,
-            previousStatus = building.status ?: BuildingStatus.OPEN,
-            targetStatus = targetStatus,
+            kind = SyncEventKind.ASSIGNMENT_BUILDING_UPDATE,
+            feature = updated,
+            previousFeature = building,
         )
-        store.updateAssignmentBuildingStatus(assignment.summary.id, building.id, targetStatus)
+        store.mergeAssignmentMapFeature(assignment.summary.id, building.id, updated)
         syncScheduler.schedule()
         return AssignmentResult.Success(
             AssignmentBuildingStatusChange(
-                building.copy(status = targetStatus, isPendingSync = true),
+                updated,
                 queued = true,
             ),
         )

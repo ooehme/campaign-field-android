@@ -52,7 +52,8 @@ interface AssignmentRemoteDataSource {
         id: String,
         status: BuildingStatus,
         clientEventKey: String? = null,
-    ): AssignmentResult<Unit> = AssignmentResult.Failure(
+        knownUpdatedAt: String? = null,
+    ): AssignmentResult<AssignmentMapFeature?> = AssignmentResult.Failure(
         AssignmentFailure.unsupportedMutation(),
     )
 
@@ -62,7 +63,8 @@ interface AssignmentRemoteDataSource {
         notes: String? = null,
         includeNotes: Boolean = false,
         clientEventKey: String? = null,
-    ): AssignmentResult<Unit> = AssignmentResult.Failure(
+        knownUpdatedAt: String? = null,
+    ): AssignmentResult<AssignmentMapFeature?> = AssignmentResult.Failure(
         AssignmentFailure.unsupportedMutation(),
     )
 
@@ -297,10 +299,12 @@ class AssignmentHttpClient internal constructor(
         id: String,
         status: BuildingStatus,
         clientEventKey: String?,
-    ): AssignmentResult<Unit> = updateAssignmentBuilding(
+        knownUpdatedAt: String?,
+    ): AssignmentResult<AssignmentMapFeature?> = updateAssignmentBuilding(
         id = id,
         status = status,
         clientEventKey = clientEventKey,
+        knownUpdatedAt = knownUpdatedAt,
     )
 
     override suspend fun updateAssignmentBuilding(
@@ -309,11 +313,13 @@ class AssignmentHttpClient internal constructor(
         notes: String?,
         includeNotes: Boolean,
         clientEventKey: String?,
-    ): AssignmentResult<Unit> = withContext(ioDispatcher) {
+        knownUpdatedAt: String?,
+    ): AssignmentResult<AssignmentMapFeature?> = withContext(ioDispatcher) {
         val payload = buildJsonObject {
             status?.let { put("status", it.apiValue) }
             if (includeNotes) put("notes", notes)
             clientEventKey?.let { put("client_event_key", it) }
+            knownUpdatedAt?.let { put("updated_at", it) }
         }.toString()
         val body = payload.toRequestBody(JSON_MEDIA_TYPE)
         val request = Request.Builder()
@@ -321,7 +327,11 @@ class AssignmentHttpClient internal constructor(
             .patch(body)
             .build()
         when (val response = execute(request)) {
-            is RawResponse.Success -> AssignmentResult.Success(Unit)
+            is RawResponse.Success -> AssignmentResult.Success(
+                response.body.takeIf(String::isNotBlank)?.let { body ->
+                    runCatching { mapDataParser.parseBuilding(body) }.getOrNull()
+                },
+            )
             is RawResponse.HttpFailure -> AssignmentResult.Failure(
                 AssignmentFailure.fromHttp(
                     response.status,
@@ -438,10 +448,10 @@ class AssignmentHttpClient internal constructor(
     }
 
     private fun AssignmentLocationInput.toRequestBody() = buildJsonObject {
-        put("latitude", latitude)
-        put("longitude", longitude)
+        put("lat", latitude)
+        put("lng", longitude)
         label?.let { put("label", it) }
-        note?.let { put("note", it) }
+        note?.let { put("notes", it) }
         status?.let { put("status", it) }
     }.toString().toRequestBody(JSON_MEDIA_TYPE)
 

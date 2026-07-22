@@ -117,6 +117,7 @@ class AssignmentHttpClientTest {
             "17",
             BuildingStatus.UNREACHABLE,
             "queue-1",
+            "2026-07-22T08:00:00Z",
         )
 
         assertTrue(result is AssignmentResult.Success)
@@ -124,7 +125,7 @@ class AssignmentHttpClientTest {
         assertEquals("PATCH", request.method)
         assertEquals("/api/assignment-buildings/17", request.path)
         assertEquals(
-            """{"status":"unreachable","client_event_key":"queue-1"}""",
+            """{"status":"unreachable","client_event_key":"queue-1","updated_at":"2026-07-22T08:00:00Z"}""",
             request.body.readUtf8(),
         )
     }
@@ -180,7 +181,29 @@ class AssignmentHttpClientTest {
         val request = server.takeRequest()
         assertEquals("POST", request.method)
         assertEquals("/api/assignments/8/poster-locations", request.path)
-        assertTrue(request.body.readUtf8().contains("\"latitude\":50.8"))
+        assertEquals(
+            """{"lat":50.8,"lng":12.9,"label":"Mast","notes":"Nordseite"}""",
+            request.body.readUtf8(),
+        )
+    }
+
+    @Test
+    fun `reads authoritative building version after update`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """{"data":{"id":17,"status":"done","updated_at":"2026-07-22T08:01:00Z","geometry":{"type":"Point","coordinates":[12,50]}}}""",
+            ),
+        )
+
+        val result = client.updateAssignmentBuildingStatus(
+            id = "17",
+            status = BuildingStatus.DONE,
+            clientEventKey = "queue-2",
+            knownUpdatedAt = "2026-07-22T08:00:00Z",
+        ) as AssignmentResult.Success
+
+        assertEquals(BuildingStatus.DONE, result.value?.status)
+        assertEquals("2026-07-22T08:01:00Z", result.value?.serverUpdatedAt)
     }
 
     @Test

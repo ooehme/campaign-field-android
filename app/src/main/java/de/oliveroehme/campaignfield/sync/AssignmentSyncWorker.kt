@@ -40,7 +40,14 @@ class AssignmentSyncEngine(
                         offlineStore.markQueueEventRetryable(event.id, result.failure.userMessage)
                         return SyncProcessOutcome.RETRY
                     }
-                    AssignmentFailureKind.UNAUTHORIZED -> return SyncProcessOutcome.AUTHENTICATION_REQUIRED
+                    AssignmentFailureKind.UNAUTHORIZED -> {
+                        offlineStore.markQueueEventFailed(
+                            event.id,
+                            SyncFailureKind.AUTHENTICATION,
+                            result.failure.userMessage,
+                        )
+                        return SyncProcessOutcome.AUTHENTICATION_REQUIRED
+                    }
                     AssignmentFailureKind.FORBIDDEN -> offlineStore.markQueueEventFailed(
                         event.id,
                         SyncFailureKind.PERMISSION,
@@ -98,13 +105,14 @@ class AssignmentSyncEngine(
                         notes = queuedFeature.note,
                         includeNotes = true,
                         clientEventKey = event.id,
+                        knownUpdatedAt = queuedFeature.serverUpdatedAt,
                     )
                 ) {
                     is AssignmentResult.Success -> {
                         offlineStore.mergeAssignmentMapFeature(
                             event.assignmentId,
                             queuedFeature.id,
-                            queuedFeature.copy(isPendingSync = false),
+                            result.value ?: queuedFeature.copy(isPendingSync = false),
                         )
                         AssignmentResult.Success(Unit)
                     }
@@ -130,11 +138,19 @@ class AssignmentSyncEngine(
                     )
                 ) {
                     is AssignmentResult.Success -> {
-                        offlineStore.updateAssignmentBuildingStatus(
-                            event.assignmentId,
-                            buildingId,
-                            targetStatus,
-                        )
+                        if (result.value != null) {
+                            offlineStore.mergeAssignmentMapFeature(
+                                event.assignmentId,
+                                buildingId,
+                                result.value,
+                            )
+                        } else {
+                            offlineStore.updateAssignmentBuildingStatus(
+                                event.assignmentId,
+                                buildingId,
+                                targetStatus,
+                            )
+                        }
                         AssignmentResult.Success(Unit)
                     }
                     is AssignmentResult.Failure -> result

@@ -30,6 +30,7 @@ data class AssignmentMapFeature(
     val canDelete: Boolean = false,
     val label: String? = null,
     val note: String? = null,
+    val serverUpdatedAt: String? = null,
     val isPendingSync: Boolean = false,
 )
 

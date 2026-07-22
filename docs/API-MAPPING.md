@@ -157,7 +157,8 @@ Lokale Gebäudeänderungen werden als Overlay über Serverdaten gelegt. Queue-Ar
 Verarbeitet werden `pending -> syncing -> synced|failed`; stale `syncing` wird nach fünf
 Minuten zurückgesetzt, erfolgreiche Einträge nach 24 Stunden entfernt. Sync startet bei
 App-Start, Online-Rückkehr, manuell und nach Retry. Gebäude-Events erhalten die Queue-ID
-als `client_event_key`. 401 muss den gesamten Sync stoppen; 403/422 bleiben sichtbar;
+als `client_event_key` und den gelesenen Serverstand als `updated_at`. 401 muss den
+gesamten Sync stoppen; 403/409/422 bleiben sichtbar;
 5xx/Netzwerkfehler sind erneut versuchbar. Native ersetzt IndexedDB/TanStack Query durch
 Room, Repositories, Flow und WorkManager.
 
@@ -168,6 +169,8 @@ angezeigt. WorkManager startet bei App-Start, nach einer lokalen Mutation und be
 erfülltem Netzwerk-Constraint. Anders als die PWA bleiben
 Transport-/5xx-Fehler automatisch versuchbar, statt als manuell zu reparierendes `failed`
 liegen zu bleiben. Dauerhafte 403/409/422-Fehler werden mit Retry-Möglichkeit angezeigt.
+Der Gebäude-Vertrag ist durch `campaign-core` bestätigt. POST-Erstellungen von Postern
+und Aktionsständen besitzen dort noch keinen Idempotency-Key und bleiben ein Release-Risiko.
 
 ## Fotos und Nachweise
 
@@ -193,7 +196,7 @@ anzeigen und niemals einen Servererfolg vortäuschen.
 1. Sanctum ist durch Phase 2 bestätigt; offen bleiben `Secure`, ein sicherer 4xx bei
    falscher Origin und eine verbindliche native Client-Origin (siehe `SANCTUM-SPIKE.md`).
 2. Finales Schema aller `can`-Flags und Statusübergänge.
-3. Idempotenz und Konfliktstrategie für sämtliche Queue-Arten, nicht nur Gebäude.
+3. Idempotenz für Poster- und Aktionsstand-POSTs sowie Versionierung ihrer Updates.
 4. Proof-/Foto-/Issue-Endpunkte, Multipart-Schema, Limits, EXIF- und Löschregeln.
 5. Teamstandort-Aufbewahrung, Frequenz, Sichtbarkeit und Löschsemantik.
 6. Delta-/Versionsfelder für Assignments, Areas, Gebäude und Standortdaten.

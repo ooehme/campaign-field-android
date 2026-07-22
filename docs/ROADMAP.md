@@ -1,7 +1,7 @@
 # Roadmap
 
-Status: Phasen 1 bis 6 abgeschlossen; Cache und Queue aus Phase 7 sind für Assignments,
-Gebäude, Poster- und Aktionsstandorte vorgezogen umgesetzt.
+Status: Phasen 1 bis 7 sind im lokal und gegen den vorhandenen Backendvertrag
+prüfbaren Umfang abgeschlossen. Für POST-Erstellungen fehlt serverseitig noch Idempotenz.
 Jede Phase endet mit einem kleinen, testbaren Inkrement. Backend-Fragen müssen vor
 Implementierung der davon abhängigen Mutation verbindlich beantwortet werden.
 
@@ -216,14 +216,11 @@ die serverseitige Gebietsprüfung bleiben Backend-Restpunkte.
 
 ## 7. Room-Cache und Offline-Sync-Queue
 
-**Teilstatus:** Assignment-Snapshots/-Details, Statusmutationen und die Sync-Oberfläche
-sind am 22.07.2026 umgesetzt. Room überlebt Prozessneustarts; WorkManager nutzt
-Netzwerk-Constraint, exponentielles Backoff und Einzelinstanz. Queue-Zustände, Versuche,
-Fehler, manuelles Retry, Fünf-Minuten-Recovery für verwaistes `syncing` und 24-Stunden-
-Retention für `synced` sind sichtbar. Serverzustand wird vor `synced` lokal gespeichert;
-Logout/401 leeren Cache und Queue. Gebäude, Areas, Poster-/Aktionsstandorte sowie deren
-Pending-Overlays und Queue-Arten sind umgesetzt. Offen bleiben der verbindliche
-Idempotenz-/Konfliktvertrag und gezielte Room-Migrationstests.
+**Status:** Lokal abgeschlossen am 22.07.2026. Room-Migrationen 1→4, FIFO bei gleichen
+Zeitstempeln, exklusives Claiming, stale-Recovery und Retention sind auf einem Pixel 9a
+getestet. 401 markiert den aktiven Eintrag deterministisch und stoppt den Lauf. Gebäude-
+Events senden die stabile Queue-ID als `client_event_key` und den bekannten Serverstand
+als `updated_at`; 409 bleibt sichtbar. Autoritative Antworten werden vor `synced` gemerged.
 
 **Ziel:** Lesen und Arbeiten bei instabilem Netz mit nachvollziehbarer, idempotenter Queue.
 
@@ -248,8 +245,12 @@ WorkManager-Verzögerung, Sessionablauf während Queue-Lauf.
 - erfolgreicher Sync merged Serverzustand vor `synced`; Fehler bleiben verständlich sichtbar.
 - Retry ist idempotent; lokale Pending-Daten werden durch Refetch nicht verdeckt.
 
-**Offene Backend-Fragen:** Idempotency-Key für jede Mutationsart; 409/Versionierung;
-Deltaendpunkte; server authoritative timestamp; maximale Offline-Dauer und Löschregeln.
+**Ergebnis/Restpunkte:** Der in `campaign-core` implementierte Gebäude-Vertrag ist nativ
+abgebildet und per MockWebServer getestet. Assignment-/Standort-PATCHes sind wiederholbare
+Setzoperationen. Für Poster-POSTs und die erstmalige Aktionsstand-Anlage fehlt weiterhin
+ein serverseitig gespeicherter Idempotency-Key; deren automatische Wiederholung bleibt
+damit ein Release-Risiko. Offen sind außerdem Deltaendpunkte, maximale Offline-Dauer und
+fachliche Löschregeln.
 
 ## 8. Fotos, Notizen und Nachweise
 
@@ -334,5 +335,5 @@ Staging für automatisierte Tests; Release-Health-Endpunkt und Wartungsmodus.
 
 ## Empfohlener nächster Schritt
 
-Phase 7 abschließen: Idempotenz-/Konfliktvertrag verbindlich klären, Migrationstests
-ergänzen und die verbleibenden Queue-Randfälle gegen einen realen Backend-Stand prüfen.
+Phase 8 beginnen: Proof-Modell, internen Dateispeicher sowie Kamera-/Photo-Picker-Flow
+lokal umsetzen. Upload und Queue-Anbindung bleiben bis zum finalen Backendvertrag aus.

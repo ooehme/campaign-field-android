@@ -31,8 +31,10 @@ bleibt vor einem Produktivbetrieb eine verbindliche Backend-Voraussetzung.
   temporäre Bilder, Fehlermeldungen mit Payloadbezug und Standortzustand.
 - Für verbleibende Offline-Daten werden Aufbewahrungsfristen und eine manuelle
   Löschfunktion festgelegt.
-- Eine verschlüsselte Room-Datenbank ist vor Phase 7 zu entscheiden; Android Keystore
-  allein schützt Cookie-Schlüssel, nicht automatisch alle Datenbankseiten.
+- Room bleibt vorerst ohne zusätzliche Anwendungsschicht-Verschlüsselung: App-Sandbox,
+  Gerätespeicherverschlüsselung und deaktivierte Backups bilden den Basisschutz; Cookies
+  bleiben separat Keystore-verschlüsselt. Phase 9 prüft diese Entscheidung erneut gegen
+  das Threat Model für entsperrte oder kompromittierte Geräte.
 
 ## Netzwerk
 

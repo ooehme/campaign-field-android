@@ -90,6 +90,7 @@ class AssignmentOfflineRepositoryTest {
             geometryGeoJson = "{}",
             status = BuildingStatus.OPEN,
             canUpdate = true,
+            serverUpdatedAt = "2026-07-22T08:00:00Z",
         )
         val store = FakeOfflineStore().apply {
             mapData = CachedValue(AssignmentMapData(1, features = listOf(building)), 1L)
@@ -284,14 +285,15 @@ class AssignmentOfflineRepositoryTest {
             geometryGeoJson = "{}",
             status = BuildingStatus.OPEN,
             canUpdate = true,
+            serverUpdatedAt = "2026-07-22T08:00:00Z",
         )
         val store = FakeOfflineStore().apply {
             mapData = CachedValue(AssignmentMapData(1, features = listOf(building)), 1L)
-            enqueueAssignmentBuildingStatusUpdate(
+            enqueueAssignmentMapFeatureMutation(
                 "assignment-1",
-                "building-1",
-                BuildingStatus.OPEN,
-                BuildingStatus.DONE,
+                SyncEventKind.ASSIGNMENT_BUILDING_UPDATE,
+                building.copy(status = BuildingStatus.DONE, isPendingSync = true),
+                building,
             )
         }
         val remote = FakeRemote()
@@ -302,6 +304,7 @@ class AssignmentOfflineRepositoryTest {
         assertEquals("building-1", remote.updatedBuildingId)
         assertEquals(BuildingStatus.DONE, remote.updatedBuildingStatus)
         assertEquals("event-1", remote.updatedBuildingClientEventKey)
+        assertEquals("2026-07-22T08:00:00Z", remote.updatedBuildingKnownUpdatedAt)
         assertEquals(BuildingStatus.DONE, store.mapData?.value?.features?.single()?.status)
         assertEquals(listOf("building", "synced"), store.operationLog)
     }
@@ -348,6 +351,65 @@ class AssignmentOfflineRepositoryTest {
         assertEquals(SyncProcessOutcome.COMPLETE, outcome)
         assertEquals(SyncQueueStatus.FAILED, store.queue.value.single().status)
         assertEquals(SyncFailureKind.VALIDATION, store.queue.value.single().failureKind)
+    }
+
+    @Test
+    fun `authentication failure marks current event and stops queue`() = runBlocking {
+        val store = FakeOfflineStore().apply {
+            enqueueAssignmentStatusUpdate(
+                "assignment-1",
+                AssignmentStatus.READY,
+                AssignmentStatus.ACTIVE,
+            )
+            enqueueAssignmentStatusUpdate(
+                "assignment-2",
+                AssignmentStatus.READY,
+                AssignmentStatus.ACTIVE,
+            )
+        }
+        val remote = FakeRemote(
+            updateResult = AssignmentResult.Failure(
+                AssignmentFailure(
+                    AssignmentFailureKind.UNAUTHORIZED,
+                    401,
+                    "Sitzung abgelaufen.",
+                ),
+            ),
+        )
+
+        val outcome = AssignmentSyncEngine(remote, store).processPending()
+
+        assertEquals(SyncProcessOutcome.AUTHENTICATION_REQUIRED, outcome)
+        assertEquals(SyncQueueStatus.FAILED, store.queue.value[0].status)
+        assertEquals(SyncFailureKind.AUTHENTICATION, store.queue.value[0].failureKind)
+        assertEquals(SyncQueueStatus.PENDING, store.queue.value[1].status)
+        assertEquals(0, store.queue.value[1].attempts)
+    }
+
+    @Test
+    fun `conflict stays visible without blocking later runs`() = runBlocking {
+        val store = FakeOfflineStore().apply {
+            enqueueAssignmentStatusUpdate(
+                "assignment-1",
+                AssignmentStatus.READY,
+                AssignmentStatus.ACTIVE,
+            )
+        }
+        val remote = FakeRemote(
+            updateResult = AssignmentResult.Failure(
+                AssignmentFailure(
+                    AssignmentFailureKind.CONFLICT,
+                    409,
+                    "Konflikt.",
+                ),
+            ),
+        )
+
+        val outcome = AssignmentSyncEngine(remote, store).processPending()
+
+        assertEquals(SyncProcessOutcome.COMPLETE, outcome)
+        assertEquals(SyncQueueStatus.FAILED, store.queue.value.single().status)
+        assertEquals(SyncFailureKind.CONFLICT, store.queue.value.single().failureKind)
     }
 
     private fun profile(role: String = "lead") = UserProfile(
@@ -408,6 +470,7 @@ class AssignmentOfflineRepositoryTest {
         var updatedBuildingId: String? = null
         var updatedBuildingStatus: BuildingStatus? = null
         var updatedBuildingClientEventKey: String? = null
+        var updatedBuildingKnownUpdatedAt: String? = null
         var createdPosterInput: AssignmentLocationInput? = null
         override suspend fun loadAssignments(
             userId: String?,
@@ -435,11 +498,28 @@ class AssignmentOfflineRepositoryTest {
             id: String,
             status: BuildingStatus,
             clientEventKey: String?,
-        ): AssignmentResult<Unit> {
+            knownUpdatedAt: String?,
+        ): AssignmentResult<AssignmentMapFeature?> {
             updatedBuildingId = id
             updatedBuildingStatus = status
             updatedBuildingClientEventKey = clientEventKey
-            return AssignmentResult.Success(Unit)
+            updatedBuildingKnownUpdatedAt = knownUpdatedAt
+            return AssignmentResult.Success(null)
+        }
+
+        override suspend fun updateAssignmentBuilding(
+            id: String,
+            status: BuildingStatus?,
+            notes: String?,
+            includeNotes: Boolean,
+            clientEventKey: String?,
+            knownUpdatedAt: String?,
+        ): AssignmentResult<AssignmentMapFeature?> {
+            updatedBuildingId = id
+            updatedBuildingStatus = status
+            updatedBuildingClientEventKey = clientEventKey
+            updatedBuildingKnownUpdatedAt = knownUpdatedAt
+            return AssignmentResult.Success(null)
         }
 
         override suspend fun createPosterLocation(
@@ -508,6 +588,9 @@ class AssignmentOfflineRepositoryTest {
             previousFeatureId: String?,
             feature: AssignmentMapFeature,
         ) {
+            if (feature.kind == AssignmentMapFeatureKind.BUILDING) {
+                operationLog += "building"
+            }
             val current = mapData?.value ?: AssignmentMapData()
             val features = current.features.filterNot {
                 it.id == previousFeatureId || it.id == feature.id
@@ -593,8 +676,17 @@ class AssignmentOfflineRepositoryTest {
                 kind = kind,
                 targetStatus = AssignmentStatus.UNKNOWN,
                 previousStatus = AssignmentStatus.UNKNOWN,
+                buildingId = feature.id.takeIf {
+                    kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE
+                },
                 subjectId = feature.id,
                 payloadJson = Json.encodeToString(feature),
+                targetBuildingStatus = feature.status.takeIf {
+                    kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE
+                },
+                previousBuildingStatus = previousFeature?.status.takeIf {
+                    kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE
+                },
                 status = SyncQueueStatus.PENDING,
                 attempts = 0,
                 createdAtEpochMillis = 1L,

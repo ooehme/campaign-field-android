@@ -24,7 +24,7 @@ werden in Room gespeichert; Statusänderungen bleiben bei Netzausfall in einer p
 sichtbaren Queue und werden per WorkManager nach Wiederverbindung synchronisiert. Die
 Assignment-Karte zeigt Zielgebiete, Gebäude/Poster, optionalen Live-Standort und Geräte-Bearing; bei
 Basemapfehlern bleibt sie mit lokalem Leer-Stil nutzbar. Der technische Sanctum-Nachweis
-steht in [SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt Phase 6 der
+steht in [SANCTUM-SPIKE.md](docs/SANCTUM-SPIKE.md); als Nächstes folgt Phase 8 der
 [Roadmap](docs/ROADMAP.md).
 
 Die Analyse der PWA-Referenz ist in [API-MAPPING.md](docs/API-MAPPING.md) dokumentiert.

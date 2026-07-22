@@ -273,8 +273,16 @@ class RoomOfflineStore(
             assignmentId = assignmentId,
             subjectId = feature.id,
             kind = kind.name,
-            targetStatus = feature.resourceStatus.orEmpty(),
-            previousStatus = previousFeature?.resourceStatus.orEmpty(),
+            targetStatus = if (kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE) {
+                feature.status?.apiValue.orEmpty()
+            } else {
+                feature.resourceStatus.orEmpty()
+            },
+            previousStatus = if (kind == SyncEventKind.ASSIGNMENT_BUILDING_UPDATE) {
+                previousFeature?.status?.apiValue.orEmpty()
+            } else {
+                previousFeature?.resourceStatus.orEmpty()
+            },
             status = SyncQueueStatus.PENDING.name,
             attempts = 0,
             createdAtEpochMillis = now,

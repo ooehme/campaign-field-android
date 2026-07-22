@@ -135,17 +135,17 @@ abstract class OfflineDao {
         )
     }
 
-    @Query("SELECT * FROM sync_queue ORDER BY createdAtEpochMillis ASC")
+    @Query("SELECT * FROM sync_queue ORDER BY createdAtEpochMillis ASC, rowid ASC")
     abstract fun observeQueue(): Flow<List<SyncQueueEntity>>
 
-    @Query("SELECT * FROM sync_queue ORDER BY createdAtEpochMillis ASC")
+    @Query("SELECT * FROM sync_queue ORDER BY createdAtEpochMillis ASC, rowid ASC")
     abstract suspend fun readQueue(): List<SyncQueueEntity>
 
     @Query(
         """
         SELECT * FROM sync_queue
         WHERE status = 'PENDING'
-        ORDER BY createdAtEpochMillis ASC
+        ORDER BY createdAtEpochMillis ASC, rowid ASC
         """,
     )
     abstract suspend fun readPendingQueue(): List<SyncQueueEntity>
@@ -243,24 +243,30 @@ abstract class CampaignFieldDatabase : RoomDatabase() {
             context.applicationContext,
             CampaignFieldDatabase::class.java,
             DATABASE_NAME,
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+        ).addMigrations(*ALL_MIGRATIONS).build()
 
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `assignment_cache` ADD COLUMN `mapDataJson` TEXT")
             }
         }
 
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `sync_queue` ADD COLUMN `subjectId` TEXT")
             }
         }
 
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `sync_queue` ADD COLUMN `payloadJson` TEXT")
             }
         }
+
+        internal val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+        )
     }
 }

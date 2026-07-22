@@ -59,10 +59,11 @@ class AssignmentMapDataParserTest {
     @Test
     fun `parses building status and update permission`() {
         val page = parser.parseBuildings(
-            """{"data":[{"id":17,"status":"blocked","can":{"update":true},"geometry":{"type":"Point","coordinates":[12,50]}}]}""",
+            """{"data":[{"id":17,"status":"blocked","updated_at":"2026-07-22T08:00:00Z","can":{"update":true},"geometry":{"type":"Point","coordinates":[12,50]}}]}""",
         )
 
         assertEquals(BuildingStatus.BLOCKED, page.features.single().status)
+        assertEquals("2026-07-22T08:00:00Z", page.features.single().serverUpdatedAt)
         assertTrue(page.features.single().canUpdate)
     }
 
