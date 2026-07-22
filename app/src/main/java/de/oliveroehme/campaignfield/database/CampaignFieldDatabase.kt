@@ -14,6 +14,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "assignment_cache")
@@ -22,6 +24,7 @@ data class AssignmentCacheEntity(
     val summaryJson: String,
     val detailJson: String?,
     val cachedAtEpochMillis: Long,
+    val mapDataJson: String? = null,
 )
 
 @Entity(
@@ -89,7 +92,10 @@ abstract class OfflineDao {
     @Query("SELECT * FROM assignment_cache WHERE assignmentId = :assignmentId LIMIT 1")
     abstract suspend fun readAssignment(assignmentId: String): AssignmentCacheEntity?
 
-    @Query("SELECT assignmentId FROM assignment_cache WHERE detailJson IS NOT NULL")
+    @Query(
+        "SELECT assignmentId FROM assignment_cache " +
+            "WHERE detailJson IS NOT NULL AND mapDataJson IS NOT NULL",
+    )
     abstract fun observeOfflineReadyAssignmentIds(): Flow<List<String>>
 
     @Upsert
@@ -107,7 +113,10 @@ abstract class OfflineDao {
         entities.forEachIndexed { index, entity ->
             val existing = readAssignment(entity.assignmentId)
             upsertAssignment(
-                entity.copy(detailJson = entity.detailJson ?: existing?.detailJson),
+                entity.copy(
+                    detailJson = entity.detailJson ?: existing?.detailJson,
+                    mapDataJson = entity.mapDataJson ?: existing?.mapDataJson,
+                ),
             )
             insertListEntries(listOf(AssignmentListEntryEntity(entity.assignmentId, index)))
         }
@@ -117,7 +126,10 @@ abstract class OfflineDao {
     open suspend fun storeAssignment(entity: AssignmentCacheEntity) {
         val existing = readAssignment(entity.assignmentId)
         upsertAssignment(
-            entity.copy(detailJson = entity.detailJson ?: existing?.detailJson),
+            entity.copy(
+                detailJson = entity.detailJson ?: existing?.detailJson,
+                mapDataJson = entity.mapDataJson ?: existing?.mapDataJson,
+            ),
         )
     }
 
@@ -216,7 +228,7 @@ abstract class OfflineDao {
         AssignmentListEntryEntity::class,
         SyncQueueEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class CampaignFieldDatabase : RoomDatabase() {
@@ -229,6 +241,12 @@ abstract class CampaignFieldDatabase : RoomDatabase() {
             context.applicationContext,
             CampaignFieldDatabase::class.java,
             DATABASE_NAME,
-        ).build()
+        ).addMigrations(MIGRATION_1_2).build()
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `assignment_cache` ADD COLUMN `mapDataJson` TEXT")
+            }
+        }
     }
 }

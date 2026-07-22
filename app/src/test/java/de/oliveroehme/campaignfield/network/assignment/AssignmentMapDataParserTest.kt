@@ -37,4 +37,21 @@ class AssignmentMapDataParserTest {
         assertEquals(AssignmentMapFeatureKind.POSTER, page.features.single().kind)
         assertTrue(page.features.single().geometryGeoJson.contains("12.9"))
     }
+
+    @Test
+    fun `reads geometry from canonical area building relation`() {
+        val page = parser.parseBuildings(
+            """
+            {"data":[{
+              "id":17,
+              "area_building_id":40,
+              "area_building":{"id":40,"geometry":{"type":"Polygon","coordinates":[[[12,50],[13,50],[13,51],[12,50]]]}}
+            }],"current_page":1,"last_page":1,"per_page":100,"total":1}
+            """.trimIndent(),
+        )
+
+        assertEquals(1, page.features.size)
+        assertEquals("17", page.features.single().id)
+        assertTrue(page.features.single().geometryGeoJson.contains("Polygon"))
+    }
 }

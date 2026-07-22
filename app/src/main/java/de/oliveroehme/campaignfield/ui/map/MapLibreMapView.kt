@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -149,7 +150,7 @@ fun MapLibreMapView(
         onBasemapStateChanged(BasemapState.LOADING)
         mapView.getMapAsync { readyMap ->
             map = readyMap
-            configureInteractions(readyMap, mode, mapView)
+            configureInteractions(readyMap, mode)
             val styleBuilder = if (isOnline) {
                 Style.Builder().fromUri(configuration.styleUrl)
             } else {
@@ -164,19 +165,23 @@ fun MapLibreMapView(
         }
     }
 
-    LaunchedEffect(
-        loadedStyle,
-        areaGeoJson,
-        featureGeoJson,
-        currentLocation,
-        bearing,
-        theme,
-        useBaseBuildingExtrusions,
-    ) {
+    LaunchedEffect(loadedStyle, theme, useBaseBuildingExtrusions) {
         val style = loadedStyle ?: return@LaunchedEffect
         applyFieldBasemapStyle(style, theme)
         syncBaseBuildingExtrusions(style, theme, useBaseBuildingExtrusions)
-        updateSourcesAndLayers(style, areaGeoJson, featureGeoJson, currentLocation, bearing, theme)
+        ensureFeatureLayers(style)
+        ensureLocationLayers(style, theme)
+        updateLocationLayerTheme(style, theme)
+    }
+
+    LaunchedEffect(loadedStyle, areaGeoJson, featureGeoJson, theme) {
+        val style = loadedStyle ?: return@LaunchedEffect
+        updateAssignmentSourcesAndLayers(style, areaGeoJson, featureGeoJson, theme)
+    }
+
+    LaunchedEffect(loadedStyle, currentLocation, bearing) {
+        val style = loadedStyle ?: return@LaunchedEffect
+        updateLocationSources(style, currentLocation, bearing)
     }
 
     LaunchedEffect(map, loadedStyle, areaGeoJson, areaCenter, currentLocation, mode) {
@@ -185,8 +190,8 @@ fun MapLibreMapView(
         mapView.post {
             initializeCamera(
                 map = readyMap,
+                mapView = mapView,
                 mode = mode,
-                configuration = configuration,
                 positions = FieldGeoJson.positions(areaGeoJson),
                 areaCenter = areaCenter,
                 currentLocation = currentLocation,
@@ -206,7 +211,8 @@ fun MapLibreMapView(
                 CameraPosition.Builder(previous)
                     .target(LatLng(location.latitude, location.longitude))
                     .bearing(bearing ?: previous.bearing)
-                    .tilt(configuration.initialPitch)
+                    .tilt(LIVE_SCANNER_PITCH)
+                    .padding(0.0, mapView.height / 3.0, 0.0, 0.0)
                     .build(),
             ),
             CAMERA_ANIMATION_MS,
@@ -276,6 +282,14 @@ private fun rememberManagedMapView(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
+            if (mode == FieldMapMode.ASSIGNMENT) {
+                setOnTouchListener { view, event ->
+                    val keepGestureInsideMap = event.actionMasked != MotionEvent.ACTION_UP &&
+                        event.actionMasked != MotionEvent.ACTION_CANCEL
+                    view.parent?.requestDisallowInterceptTouchEvent(keepGestureInsideMap)
+                    false
+                }
+            }
             onCreate(Bundle())
         }
     }
@@ -331,7 +345,7 @@ private fun rememberManagedMapView(
     return mapView
 }
 
-private fun configureInteractions(map: MapLibreMap, mode: FieldMapMode, mapView: MapView) {
+private fun configureInteractions(map: MapLibreMap, mode: FieldMapMode) {
     val controls = map.uiSettings
     if (mode == FieldMapMode.SCANNER) {
         controls.isAttributionEnabled = false
@@ -341,10 +355,8 @@ private fun configureInteractions(map: MapLibreMap, mode: FieldMapMode, mapView:
         map.setMinZoomPreference(LIVE_MIN_ZOOM)
         map.setMaxZoomPreference(LIVE_MAX_ZOOM)
     } else {
-        controls.isAttributionEnabled = true
-        controls.isLogoEnabled = true
-        controls.setAttributionMargins(dp(mapView, 92), dp(mapView, 4), dp(mapView, 4), dp(mapView, 78))
-        controls.setLogoMargins(dp(mapView, 4), dp(mapView, 4), dp(mapView, 4), dp(mapView, 78))
+        controls.isAttributionEnabled = false
+        controls.isLogoEnabled = false
         controls.setAllGesturesEnabled(true)
         controls.isRotateGesturesEnabled = false
         controls.isTiltGesturesEnabled = false
@@ -353,15 +365,10 @@ private fun configureInteractions(map: MapLibreMap, mode: FieldMapMode, mapView:
     }
 }
 
-private fun dp(mapView: MapView, value: Int): Int =
-    (value * mapView.resources.displayMetrics.density).toInt()
-
-private fun updateSourcesAndLayers(
+private fun updateAssignmentSourcesAndLayers(
     style: Style,
     areaGeoJson: String?,
     featureGeoJson: String?,
-    currentLocation: LocationSample?,
-    bearing: Double?,
     theme: ScannerMapTheme,
 ) {
     val accent = theme.colors.accent
@@ -386,17 +393,22 @@ private fun updateSourcesAndLayers(
     val featuresJson = featureGeoJson ?: EMPTY_FEATURE_COLLECTION
     style.getSourceAs<GeoJsonSource>(FEATURE_GEOMETRIES_SOURCE_ID)?.setGeoJson(featuresJson)
     style.getSourceAs<GeoJsonSource>(FEATURE_MARKERS_SOURCE_ID)?.setGeoJson(featuresJson)
+}
 
-    val radiusJson = currentLocation?.let(::actionRadiusGeoJson) ?: EMPTY_FEATURE_COLLECTION
-    val radiusSource = style.getSourceAs<GeoJsonSource>(LOCATION_RADIUS_SOURCE_ID)
-    if (radiusSource == null) {
-        style.addSource(GeoJsonSource(LOCATION_RADIUS_SOURCE_ID, radiusJson))
+private fun ensureLocationLayers(style: Style, theme: ScannerMapTheme) {
+    val accent = theme.colors.accent
+    if (style.getSource(LOCATION_RADIUS_SOURCE_ID) == null) {
+        style.addSource(GeoJsonSource(LOCATION_RADIUS_SOURCE_ID, EMPTY_FEATURE_COLLECTION))
+    }
+    if (style.getLayer(LOCATION_RADIUS_FILL_LAYER_ID) == null) {
         style.addLayer(
             FillLayer(LOCATION_RADIUS_FILL_LAYER_ID, LOCATION_RADIUS_SOURCE_ID).withProperties(
                 fillColor(accent),
                 fillOpacity(0.22f),
             ),
         )
+    }
+    if (style.getLayer(LOCATION_RADIUS_LINE_LAYER_ID) == null) {
         style.addLayer(
             LineLayer(LOCATION_RADIUS_LINE_LAYER_ID, LOCATION_RADIUS_SOURCE_ID).withProperties(
                 lineColor(accent),
@@ -404,20 +416,14 @@ private fun updateSourcesAndLayers(
                 lineWidth(2f),
             ),
         )
-    } else {
-        radiusSource.setGeoJson(radiusJson)
-        style.getLayerAs<FillLayer>(LOCATION_RADIUS_FILL_LAYER_ID)?.setProperties(fillColor(accent))
-        style.getLayerAs<LineLayer>(LOCATION_RADIUS_LINE_LAYER_ID)?.setProperties(lineColor(accent))
     }
-
-    val locationJson = currentLocation?.let {
-        "{\"type\":\"Feature\",\"properties\":{\"bearing\":${normalizeBearing(bearing)}}," +
-            "\"geometry\":{\"type\":\"Point\",\"coordinates\":[${it.longitude},${it.latitude}]}}"
-    } ?: EMPTY_FEATURE_COLLECTION
-    val locationSource = style.getSourceAs<GeoJsonSource>(LOCATION_SOURCE_ID)
-    if (locationSource == null) {
-        style.addSource(GeoJsonSource(LOCATION_SOURCE_ID, locationJson))
+    if (style.getSource(LOCATION_SOURCE_ID) == null) {
+        style.addSource(GeoJsonSource(LOCATION_SOURCE_ID, EMPTY_FEATURE_COLLECTION))
+    }
+    if (style.getImage(DIRECTION_IMAGE_ID) == null) {
         style.addImage(DIRECTION_IMAGE_ID, directionBitmap(accent))
+    }
+    if (style.getLayer(LOCATION_LAYER_ID) == null) {
         style.addLayer(
             SymbolLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
                 iconImage(DIRECTION_IMAGE_ID),
@@ -428,11 +434,32 @@ private fun updateSourcesAndLayers(
                 iconSize(0.625f),
             ),
         )
-    } else {
-        locationSource.setGeoJson(locationJson)
-        style.removeImage(DIRECTION_IMAGE_ID)
-        style.addImage(DIRECTION_IMAGE_ID, directionBitmap(accent))
     }
+}
+
+private fun updateLocationLayerTheme(style: Style, theme: ScannerMapTheme) {
+    val accent = theme.colors.accent
+    style.getLayerAs<FillLayer>(LOCATION_RADIUS_FILL_LAYER_ID)?.setProperties(fillColor(accent))
+    style.getLayerAs<LineLayer>(LOCATION_RADIUS_LINE_LAYER_ID)?.setProperties(lineColor(accent))
+    if (style.getImage(DIRECTION_IMAGE_ID) != null) {
+        style.removeImage(DIRECTION_IMAGE_ID)
+    }
+    style.addImage(DIRECTION_IMAGE_ID, directionBitmap(accent))
+}
+
+private fun updateLocationSources(
+    style: Style,
+    currentLocation: LocationSample?,
+    bearing: Double?,
+) {
+    val radiusJson = currentLocation?.let(::actionRadiusGeoJson) ?: EMPTY_FEATURE_COLLECTION
+    style.getSourceAs<GeoJsonSource>(LOCATION_RADIUS_SOURCE_ID)?.setGeoJson(radiusJson)
+
+    val locationJson = currentLocation?.let {
+        "{\"type\":\"Feature\",\"properties\":{\"bearing\":${normalizeBearing(bearing)}}," +
+            "\"geometry\":{\"type\":\"Point\",\"coordinates\":[${it.longitude},${it.latitude}]}}"
+    } ?: EMPTY_FEATURE_COLLECTION
+    style.getSourceAs<GeoJsonSource>(LOCATION_SOURCE_ID)?.setGeoJson(locationJson)
 }
 
 private fun ensureFeatureLayers(style: Style) {
@@ -542,7 +569,12 @@ private fun ensureFeatureLayers(style: Style) {
     if (style.getLayer(FEATURE_MARKER_LAYER_ID) == null) {
         style.addLayer(
             CircleLayer(FEATURE_MARKER_LAYER_ID, FEATURE_MARKERS_SOURCE_ID)
-                .withFilter(Expression.raw("[\"!=\",[\"get\",\"kind\"],\"team-member\"]"))
+                .withFilter(
+                    Expression.raw(
+                        "[\"all\",[\"!=\",[\"get\",\"kind\"],\"building\"]," +
+                            "[\"!=\",[\"get\",\"kind\"],\"team-member\"]]",
+                    ),
+                )
                 .withProperties(
                     circleColor(Expression.get("color")),
                     circleOpacity(1f),
@@ -740,8 +772,8 @@ private fun FillExtrusionLayer.applyBuildingExtrusionTheme(theme: ScannerMapThem
 
 private fun initializeCamera(
     map: MapLibreMap,
+    mapView: MapView,
     mode: FieldMapMode,
-    configuration: MapConfiguration,
     positions: List<MapCoordinate>,
     areaCenter: MapCoordinate?,
     currentLocation: LocationSample?,
@@ -756,9 +788,10 @@ private fun initializeCamera(
             CameraUpdateFactory.newCameraPosition(
                 CameraPosition.Builder()
                     .target(LatLng(target.latitude, target.longitude))
-                    .zoom(configuration.initialZoom)
-                    .tilt(configuration.initialPitch)
-                    .bearing(bearing ?: configuration.fallbackBearing)
+                    .zoom(LIVE_SCANNER_ZOOM)
+                    .tilt(LIVE_SCANNER_PITCH)
+                    .bearing(bearing ?: 0.0)
+                    .padding(0.0, mapView.height / 3.0, 0.0, 0.0)
                     .build(),
             ),
         )
@@ -1015,8 +1048,10 @@ private const val ASSIGNMENT_SNAP_BACK_MS = 500
 private const val MAX_FIT_ZOOM = 17.0
 private const val ASSIGNMENT_MAX_ZOOM = 19.0
 private const val ASSIGNMENT_DEFAULT_ZOOM = 14.0
+private const val LIVE_SCANNER_ZOOM = 17.0
 private const val LIVE_MIN_ZOOM = 16.0
 private const val LIVE_MAX_ZOOM = 18.0
+private const val LIVE_SCANNER_PITCH = 20.0
 private const val ACTION_RADIUS_METERS = 10.0
 private const val ACTION_RADIUS_SEGMENTS = 64
 private const val EARTH_RADIUS_METERS = 6_371_008.8

@@ -213,7 +213,11 @@ private fun AssignmentCard(
             SmallStateIcon(
                 FieldIcons.Database,
                 if (isOfflineReady) FieldGreen else FieldAmber,
-                if (isOfflineReady) "Offline verfügbar" else "Offline-Daten werden vorbereitet",
+                if (isOfflineReady) {
+                    "Auftrags- und Kartendaten offline verfügbar"
+                } else {
+                    "Auftrags- und Kartendaten werden vorbereitet"
+                },
             )
             val syncVisual = assignmentSyncVisual(syncEvents)
             SmallStateIcon(FieldIcons.RefreshCcw, syncVisual.first, syncVisual.second)
@@ -344,6 +348,7 @@ fun AssignmentDetailScreen(
             mapData = state.mapData,
             isMapDataLoading = state.isMapDataLoading,
             mapDataErrorMessage = state.mapDataErrorMessage,
+            canChangeStatus = state.canChangeStatus,
             onChangeStatus = onChangeStatus,
             onOpenMap = onOpenMap,
             onOpenProof = onOpenProof,
@@ -366,6 +371,7 @@ private fun AssignmentDetailContent(
     mapData: AssignmentMapData?,
     isMapDataLoading: Boolean,
     mapDataErrorMessage: String?,
+    canChangeStatus: Boolean,
     onChangeStatus: (AssignmentStatus) -> Unit,
     onOpenMap: () -> Unit,
     onOpenProof: () -> Unit,
@@ -402,7 +408,10 @@ private fun AssignmentDetailContent(
         }
 
         if (isRefreshing) {
-            FieldMessagePanel(message = "Auftrag wird aktualisiert …", tint = FieldCyan)
+            FieldMessagePanel(
+                message = "Auftragsdaten werden im Hintergrund aktualisiert …",
+                tint = FieldCyan,
+            )
         }
         if (isUsingCachedData) {
             FieldMessagePanel(
@@ -495,7 +504,13 @@ private fun AssignmentDetailContent(
 
         DetailPanel(title = "Status") {
             val actions = detail.availableStatusActions()
-            if (actions.isEmpty()) {
+            if (actions.isNotEmpty() && !canChangeStatus) {
+                Text(
+                    text = "Nur die Teamleitung darf den Auftragsstatus ändern.",
+                    color = FieldMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else if (actions.isEmpty()) {
                 Text(
                     text = "Für diesen Status ist keine direkte Statusaktion verfügbar.",
                     color = FieldMuted,
@@ -571,8 +586,16 @@ private fun AssignmentOperationalSummary(
                 letterSpacing = androidx.compose.ui.unit.TextUnit(1.96f, androidx.compose.ui.unit.TextUnitType.Sp),
             )
             FieldStatusPill(
-                label = if (isLoading) "Lädt" else presentation.second.toString(),
-                tone = if (isLoading) FieldStatusTone.Neutral else FieldStatusTone.Active,
+                label = when {
+                    data != null -> presentation.second.toString()
+                    isLoading -> "Lädt"
+                    else -> "0"
+                },
+                tone = if (data == null && isLoading) {
+                    FieldStatusTone.Neutral
+                } else {
+                    FieldStatusTone.Active
+                },
             )
         }
         Text(
@@ -581,6 +604,14 @@ private fun AssignmentOperationalSummary(
             color = FieldMuted,
             style = MaterialTheme.typography.bodyMedium,
         )
+        if (isLoading && data != null) {
+            Text(
+                modifier = Modifier.padding(top = 8.dp),
+                text = "Kartendaten werden im Hintergrund aktualisiert …",
+                color = FieldCyan,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         errorMessage?.let {
             Text(
                 modifier = Modifier.padding(top = 8.dp),

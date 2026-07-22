@@ -196,11 +196,15 @@ class AssignmentHttpClient internal constructor(
             .patch(body)
             .build()
         when (val response = execute(request)) {
-            is RawResponse.Success -> runCatching { parser.parseDetail(response.body) }
-                .fold(
-                    onSuccess = { AssignmentResult.Success(it) },
-                    onFailure = { AssignmentResult.Failure(AssignmentFailure.invalidResponse()) },
-                )
+            is RawResponse.Success -> if (response.body.isBlank()) {
+                loadAssignment(id)
+            } else {
+                runCatching { parser.parseDetail(response.body) }
+                    .fold(
+                        onSuccess = { AssignmentResult.Success(it) },
+                        onFailure = { AssignmentResult.Failure(AssignmentFailure.invalidResponse()) },
+                    )
+            }
             is RawResponse.HttpFailure -> AssignmentResult.Failure(
                 AssignmentFailure.fromHttp(
                     response.status,

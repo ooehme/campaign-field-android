@@ -10,11 +10,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -42,9 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -610,9 +608,6 @@ private fun AssignmentMapFace(
 ) {
     val detail = requireNotNull(detailState.assignment)
     val assignment = detail.summary
-    val density = LocalDensity.current
-    val windowHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() }
-    val mapHeight = maxOf(420.dp, windowHeight * 0.58f)
     val layoutDirection = LocalLayoutDirection.current
     val distance = remember(areaGeoJson, lastLocation) {
         lastLocation?.let {
@@ -678,7 +673,7 @@ private fun AssignmentMapFace(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(mapHeight)
+                .aspectRatio(1f)
                 .shadow(14.dp, FieldShape)
                 .clip(FieldShape)
                 .background(FieldPanelColor)
@@ -728,12 +723,20 @@ private fun AssignmentMapFace(
             MapMetric(
                 Modifier.weight(1f),
                 "Gebäude",
-                if (detailState.isMapDataLoading) "…" else (detailState.mapData?.buildingCount ?: 0).toString(),
+                when {
+                    detailState.mapData != null -> detailState.mapData.buildingCount.toString()
+                    detailState.isMapDataLoading -> "…"
+                    else -> "0"
+                },
             )
             MapMetric(
                 Modifier.weight(1f),
                 "Poster",
-                if (detailState.isMapDataLoading) "…" else (detailState.mapData?.posterCount ?: 0).toString(),
+                when {
+                    detailState.mapData != null -> detailState.mapData.posterCount.toString()
+                    detailState.isMapDataLoading -> "…"
+                    else -> "0"
+                },
             )
             MapMetric(
                 Modifier.weight(1f),

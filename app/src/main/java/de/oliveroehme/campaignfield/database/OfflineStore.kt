@@ -1,6 +1,7 @@
 package de.oliveroehme.campaignfield.database
 
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
+import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
@@ -25,13 +26,16 @@ data class CachedValue<T>(
 interface OfflineStore {
     fun observeAssignments(): Flow<CachedValue<AssignmentPage>?>
     fun observeAssignment(id: String): Flow<CachedValue<AssignmentDetail>?>
+    fun observeAssignmentMapData(id: String): Flow<CachedValue<AssignmentMapData>?>
     fun observeOfflineReadyAssignmentIds(): Flow<Set<String>>
     fun observeQueue(): Flow<List<SyncQueueItem>>
 
     suspend fun readAssignments(): CachedValue<AssignmentPage>?
     suspend fun readAssignment(id: String): CachedValue<AssignmentDetail>?
+    suspend fun readAssignmentMapData(id: String): CachedValue<AssignmentMapData>?
     suspend fun storeAssignments(page: AssignmentPage)
     suspend fun storeAssignment(detail: AssignmentDetail)
+    suspend fun storeAssignmentMapData(id: String, mapData: AssignmentMapData)
 
     suspend fun enqueueAssignmentStatusUpdate(
         assignmentId: String,
@@ -71,6 +75,9 @@ class RoomOfflineStore(
         dao.observeQueue(),
     ) { entity, queue -> entity?.let { decodeDetail(it, queue) } }
 
+    override fun observeAssignmentMapData(id: String): Flow<CachedValue<AssignmentMapData>?> =
+        dao.observeAssignment(id).map { entity -> entity?.let(::decodeMapData) }
+
     override fun observeOfflineReadyAssignmentIds(): Flow<Set<String>> =
         dao.observeOfflineReadyAssignmentIds().map(List<String>::toSet)
 
@@ -82,6 +89,9 @@ class RoomOfflineStore(
 
     override suspend fun readAssignment(id: String): CachedValue<AssignmentDetail>? =
         dao.readAssignment(id)?.let { decodeDetail(it, dao.readQueue()) }
+
+    override suspend fun readAssignmentMapData(id: String): CachedValue<AssignmentMapData>? =
+        dao.readAssignment(id)?.let(::decodeMapData)
 
     override suspend fun storeAssignments(page: AssignmentPage) {
         val now = clock()
@@ -103,6 +113,16 @@ class RoomOfflineStore(
                 assignmentId = detail.summary.id,
                 summaryJson = json.encodeToString(detail.summary),
                 detailJson = json.encodeToString(detail),
+                cachedAtEpochMillis = clock(),
+            ),
+        )
+    }
+
+    override suspend fun storeAssignmentMapData(id: String, mapData: AssignmentMapData) {
+        val existing = dao.readAssignment(id) ?: return
+        dao.storeAssignment(
+            existing.copy(
+                mapDataJson = json.encodeToString(mapData),
                 cachedAtEpochMillis = clock(),
             ),
         )
@@ -227,6 +247,15 @@ class RoomOfflineStore(
             value = detail.copy(summary = detail.summary.withStatusOverlay(overlay)),
             cachedAtEpochMillis = entity.cachedAtEpochMillis,
         )
+    }
+
+    private fun decodeMapData(entity: AssignmentCacheEntity): CachedValue<AssignmentMapData>? {
+        val value = entity.mapDataJson
+            ?.let { encoded ->
+                runCatching { json.decodeFromString<AssignmentMapData>(encoded) }.getOrNull()
+            }
+            ?: return null
+        return CachedValue(value, entity.cachedAtEpochMillis)
     }
 
     private fun pendingStatusOverlays(queue: List<SyncQueueEntity>): Map<String, AssignmentStatus> =

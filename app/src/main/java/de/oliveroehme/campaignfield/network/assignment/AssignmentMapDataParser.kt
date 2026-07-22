@@ -72,10 +72,16 @@ internal class AssignmentMapDataParser(
         kind: AssignmentMapFeatureKind,
     ): AssignmentMapFeature? {
         val nested = when (kind) {
-            AssignmentMapFeatureKind.BUILDING -> item["building"] as? JsonObject
+            AssignmentMapFeatureKind.BUILDING -> (item["area_building"] as? JsonObject)
+                ?: (item["building"] as? JsonObject)
             AssignmentMapFeatureKind.POSTER -> item["poster"] as? JsonObject
         }
-        val id = item.firstText("id", "assignment_building_id", "poster_location_id")
+        val id = item.firstText(
+            "id",
+            "assignment_building_id",
+            "area_building_id",
+            "poster_location_id",
+        )
             ?: nested?.text("id")
             ?: return null
         val geometry = geometry(item) ?: geometry(nested) ?: pointGeometry(item) ?: pointGeometry(nested)

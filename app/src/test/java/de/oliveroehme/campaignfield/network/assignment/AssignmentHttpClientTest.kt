@@ -108,6 +108,18 @@ class AssignmentHttpClientTest {
     }
 
     @Test
+    fun `reloads assignment after status patch without response body`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(jsonResponse("""{"data":{"id":9,"title":"Detail","status":"active"}}"""))
+
+        val result = client.updateAssignmentStatus("9", AssignmentStatus.ACTIVE)
+
+        assertEquals(AssignmentStatus.ACTIVE, (result as AssignmentResult.Success).value.summary.status)
+        assertEquals("PATCH", server.takeRequest().method)
+        assertEquals("/api/assignments/9", server.takeRequest().path)
+    }
+
+    @Test
     fun `loads all building pages for letterbox map`() = runBlocking {
         server.enqueue(
             jsonResponse(

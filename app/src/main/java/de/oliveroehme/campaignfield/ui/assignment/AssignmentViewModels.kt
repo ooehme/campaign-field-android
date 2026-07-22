@@ -9,12 +9,16 @@ import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
+import de.oliveroehme.campaignfield.domain.auth.leadsAssignmentTeam
 import de.oliveroehme.campaignfield.network.assignment.AssignmentResult
 import de.oliveroehme.campaignfield.network.assignment.AssignmentDataSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -97,6 +101,7 @@ data class AssignmentDetailUiState(
     val mapData: AssignmentMapData? = null,
     val isMapDataLoading: Boolean = false,
     val mapDataErrorMessage: String? = null,
+    val canChangeStatus: Boolean = false,
 )
 
 data class ScannerUiState(
@@ -114,6 +119,30 @@ class ScannerViewModel(
     private var loadJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            repository.observeCachedAssignments(profile)
+                .map { page ->
+                    page?.items.orEmpty().filter { it.status == AssignmentStatus.ACTIVE }
+                }
+                .distinctUntilChanged()
+                .collectLatest { active ->
+                    val activeIds = active.map(AssignmentSummary::id)
+                    val currentIds = mutableState.value.activeAssignments.map { it.summary.id }
+                    if (!mutableState.value.isLoading && activeIds == currentIds) {
+                        return@collectLatest
+                    }
+                    val details = active.mapNotNull { summary ->
+                        (repository.loadAssignment(summary.id) as? AssignmentResult.Success)?.value
+                    }
+                    mutableState.value = ScannerUiState(
+                        isLoading = false,
+                        activeAssignments = details,
+                        errorMessage = if (details.size < active.size) {
+                            "Ein Teil der aktiven Aufträge konnte nicht geladen werden."
+                        } else null,
+                    )
+                }
+        }
         refresh()
     }
 
@@ -156,6 +185,7 @@ class ScannerViewModel(
 class AssignmentDetailViewModel(
     private val repository: AssignmentRepository,
     private val assignmentId: String,
+    private val profile: UserProfile,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(AssignmentDetailUiState())
     val state: StateFlow<AssignmentDetailUiState> = mutableState.asStateFlow()
@@ -166,7 +196,19 @@ class AssignmentDetailViewModel(
         viewModelScope.launch {
             repository.observeCachedAssignment(assignmentId).collect { assignment ->
                 if (assignment != null) {
-                    mutableState.update { current -> current.copy(assignment = assignment) }
+                    mutableState.update { current ->
+                        current.copy(
+                            assignment = assignment,
+                            canChangeStatus = profile.leadsAssignmentTeam(assignment),
+                        )
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            repository.observeCachedAssignmentMapData(assignmentId).collect { mapData ->
+                if (mapData != null) {
+                    mutableState.update { current -> current.copy(mapData = mapData) }
                 }
             }
         }
@@ -178,13 +220,18 @@ class AssignmentDetailViewModel(
         mutableState.update { it.copy(isLoading = true, errorMessage = null) }
         loadJob = viewModelScope.launch {
             when (val result = repository.loadAssignment(assignmentId)) {
-                is AssignmentResult.Success -> mutableState.value = AssignmentDetailUiState(
-                    isLoading = false,
-                    assignment = result.value,
-                    isUsingCachedData = result.source == AssignmentDataSource.LOCAL_CACHE,
-                    cachedAtEpochMillis = result.cachedAtEpochMillis,
-                    isMapDataLoading = true,
-                ).also {
+                is AssignmentResult.Success -> {
+                    mutableState.update { current ->
+                        AssignmentDetailUiState(
+                            isLoading = false,
+                            assignment = result.value,
+                            isUsingCachedData = result.source == AssignmentDataSource.LOCAL_CACHE,
+                            cachedAtEpochMillis = result.cachedAtEpochMillis,
+                            mapData = current.mapData,
+                            isMapDataLoading = true,
+                            canChangeStatus = profile.leadsAssignmentTeam(result.value),
+                        )
+                    }
                     when (val mapResult = repository.loadAssignmentMapData(result.value)) {
                         is AssignmentResult.Success -> mutableState.update { current ->
                             current.copy(
@@ -215,7 +262,7 @@ class AssignmentDetailViewModel(
             it.copy(isChangingStatus = true, errorMessage = null, statusMessage = null)
         }
         statusJob = viewModelScope.launch {
-            when (val result = repository.changeStatus(assignment, status)) {
+            when (val result = repository.changeStatus(profile, assignment, status)) {
                 is AssignmentResult.Success -> mutableState.update { current ->
                     current.copy(
                         assignment = result.value.assignment,
@@ -241,8 +288,9 @@ class AssignmentDetailViewModel(
         fun factory(
             repository: AssignmentRepository,
             assignmentId: String,
+            profile: UserProfile,
         ): ViewModelProvider.Factory = factoryFor {
-            AssignmentDetailViewModel(repository, assignmentId)
+            AssignmentDetailViewModel(repository, assignmentId, profile)
         }
     }
 }

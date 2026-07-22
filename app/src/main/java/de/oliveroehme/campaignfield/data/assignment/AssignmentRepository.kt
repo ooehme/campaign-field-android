@@ -10,6 +10,7 @@ import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
 import de.oliveroehme.campaignfield.domain.availableStatusActions
 import de.oliveroehme.campaignfield.domain.forOperativeOverview
+import de.oliveroehme.campaignfield.domain.auth.leadsAssignmentTeam
 import de.oliveroehme.campaignfield.network.AlwaysOnlineNetworkStateProvider
 import de.oliveroehme.campaignfield.network.NetworkStateProvider
 import de.oliveroehme.campaignfield.network.assignment.AssignmentDataSource
@@ -19,9 +20,17 @@ import de.oliveroehme.campaignfield.network.assignment.AssignmentRemoteDataSourc
 import de.oliveroehme.campaignfield.network.assignment.AssignmentResult
 import de.oliveroehme.campaignfield.sync.NoOpSyncScheduler
 import de.oliveroehme.campaignfield.sync.SyncScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class AssignmentStatusChange(
     val assignment: AssignmentDetail,
@@ -36,11 +45,13 @@ interface AssignmentRepository : Repository {
     ): AssignmentResult<AssignmentMapData> = AssignmentResult.Success(AssignmentMapData())
     suspend fun warmAssignments(ids: List<String>)
     suspend fun changeStatus(
+        profile: UserProfile,
         assignment: AssignmentDetail,
         targetStatus: AssignmentStatus,
     ): AssignmentResult<AssignmentStatusChange>
     fun observeCachedAssignments(profile: UserProfile): Flow<AssignmentPage?>
     fun observeCachedAssignment(id: String): Flow<AssignmentDetail?>
+    fun observeCachedAssignmentMapData(id: String): Flow<AssignmentMapData?>
     fun observeOfflineReadyAssignmentIds(): Flow<Set<String>>
 }
 
@@ -50,6 +61,10 @@ class DefaultAssignmentRepository(
     private val syncScheduler: SyncScheduler = NoOpSyncScheduler,
     private val networkStateProvider: NetworkStateProvider = AlwaysOnlineNetworkStateProvider,
 ) : AssignmentRepository {
+    private val mapDataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val mapDataRequestsMutex = Mutex()
+    private val mapDataRequests = mutableMapOf<String, Deferred<AssignmentResult<AssignmentMapData>>>()
+
     override suspend fun loadAssignments(profile: UserProfile): AssignmentResult<AssignmentPage> {
         val remoteResult = remote.loadAssignments(
             userId = profile.id,
@@ -61,7 +76,8 @@ class DefaultAssignmentRepository(
                     items = normalizeForProfile(remoteResult.value.items, profile),
                 )
                 offlineStore?.storeAssignments(page)
-                AssignmentResult.Success(page)
+                val effectivePage = offlineStore?.readAssignments()?.value ?: page
+                AssignmentResult.Success(effectivePage)
             }
             is AssignmentResult.Failure -> {
                 val cached = offlineStore?.readAssignments()
@@ -103,27 +119,90 @@ class DefaultAssignmentRepository(
 
     override suspend fun loadAssignmentMapData(
         assignment: AssignmentDetail,
-    ): AssignmentResult<AssignmentMapData> = remote.loadAssignmentMapData(
-        id = assignment.summary.id,
-        type = assignment.summary.type,
-    )
+    ): AssignmentResult<AssignmentMapData> {
+        val assignmentId = assignment.summary.id
+        val request = mapDataRequestsMutex.withLock {
+            mapDataRequests[assignmentId] ?: mapDataScope.async {
+                loadAndCacheAssignmentMapData(assignment)
+            }.also { created ->
+                mapDataRequests[assignmentId] = created
+                created.invokeOnCompletion {
+                    mapDataScope.launch {
+                        mapDataRequestsMutex.withLock {
+                            if (mapDataRequests[assignmentId] === created) {
+                                mapDataRequests.remove(assignmentId)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return request.await()
+    }
+
+    private suspend fun loadAndCacheAssignmentMapData(
+        assignment: AssignmentDetail,
+    ): AssignmentResult<AssignmentMapData> {
+        return when (
+            val result = remote.loadAssignmentMapData(
+                id = assignment.summary.id,
+                type = assignment.summary.type,
+            )
+        ) {
+            is AssignmentResult.Success -> {
+                offlineStore?.storeAssignmentMapData(assignment.summary.id, result.value)
+                result
+            }
+            is AssignmentResult.Failure -> {
+                val cached = offlineStore?.readAssignmentMapData(assignment.summary.id)
+                if (cached != null && result.failure.kind.isCacheFallbackAllowed()) {
+                    AssignmentResult.Success(
+                        value = cached.value,
+                        source = AssignmentDataSource.LOCAL_CACHE,
+                        cachedAtEpochMillis = cached.cachedAtEpochMillis,
+                    )
+                } else {
+                    result
+                }
+            }
+        }
+    }
 
     override suspend fun warmAssignments(ids: List<String>) {
         if (offlineStore == null || !networkStateProvider.isOnline()) return
         ids.distinct().forEach { id ->
             val cached = offlineStore.readAssignment(id)
-            if (cached?.value?.description != null || cached?.value?.instructions?.isNotEmpty() == true) {
-                return@forEach
+            val detail = if (
+                cached?.value?.description != null ||
+                cached?.value?.instructions?.isNotEmpty() == true
+            ) {
+                cached.value
+            } else {
+                val remoteDetail = remote.loadAssignment(id) as? AssignmentResult.Success
+                    ?: return@forEach
+                offlineStore.storeAssignment(remoteDetail.value)
+                remoteDetail.value
             }
-            val detail = remote.loadAssignment(id) as? AssignmentResult.Success ?: return@forEach
-            offlineStore.storeAssignment(detail.value)
+            if (offlineStore.readAssignmentMapData(id) == null) {
+                loadAssignmentMapData(detail)
+            }
         }
     }
 
     override suspend fun changeStatus(
+        profile: UserProfile,
         assignment: AssignmentDetail,
         targetStatus: AssignmentStatus,
     ): AssignmentResult<AssignmentStatusChange> {
+        if (!profile.leadsAssignmentTeam(assignment)) {
+            return AssignmentResult.Failure(
+                AssignmentFailure(
+                    kind = AssignmentFailureKind.FORBIDDEN,
+                    httpStatus = 403,
+                    userMessage = "Nur die Teamleitung darf den Auftragsstatus ändern.",
+                ),
+            )
+        }
         val isAllowed = assignment.availableStatusActions().any { it.targetStatus == targetStatus }
         if (!isAllowed) {
             return AssignmentResult.Failure(
@@ -159,6 +238,9 @@ class DefaultAssignmentRepository(
 
     override fun observeCachedAssignment(id: String): Flow<AssignmentDetail?> =
         offlineStore?.observeAssignment(id)?.map { it?.value } ?: flowOf(null)
+
+    override fun observeCachedAssignmentMapData(id: String): Flow<AssignmentMapData?> =
+        offlineStore?.observeAssignmentMapData(id)?.map { it?.value } ?: flowOf(null)
 
     override fun observeOfflineReadyAssignmentIds(): Flow<Set<String>> =
         offlineStore?.observeOfflineReadyAssignmentIds() ?: flowOf(emptySet())

@@ -3,16 +3,19 @@ package de.oliveroehme.campaignfield.data.assignment
 import de.oliveroehme.campaignfield.database.CachedValue
 import de.oliveroehme.campaignfield.database.OfflineStore
 import de.oliveroehme.campaignfield.domain.AssignmentDetail
+import de.oliveroehme.campaignfield.domain.AssignmentMapData
 import de.oliveroehme.campaignfield.domain.AssignmentPage
 import de.oliveroehme.campaignfield.domain.AssignmentPermissions
 import de.oliveroehme.campaignfield.domain.AssignmentStatus
 import de.oliveroehme.campaignfield.domain.AssignmentSummary
 import de.oliveroehme.campaignfield.domain.AssignmentType
+import de.oliveroehme.campaignfield.domain.TeamSummary
 import de.oliveroehme.campaignfield.domain.SyncEventKind
 import de.oliveroehme.campaignfield.domain.SyncFailureKind
 import de.oliveroehme.campaignfield.domain.SyncQueueItem
 import de.oliveroehme.campaignfield.domain.SyncQueueStatus
 import de.oliveroehme.campaignfield.domain.auth.UserProfile
+import de.oliveroehme.campaignfield.domain.auth.TeamMembership
 import de.oliveroehme.campaignfield.network.NetworkStateProvider
 import de.oliveroehme.campaignfield.network.assignment.AssignmentDataSource
 import de.oliveroehme.campaignfield.network.assignment.AssignmentFailure
@@ -25,6 +28,9 @@ import de.oliveroehme.campaignfield.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -61,13 +67,81 @@ class AssignmentOfflineRepositoryTest {
         )
         val detail = detail(AssignmentStatus.READY)
 
-        val result = repository.changeStatus(detail, AssignmentStatus.ACTIVE)
+        val result = repository.changeStatus(profile(), detail, AssignmentStatus.ACTIVE)
             as AssignmentResult.Success
 
         assertTrue(result.value.queued)
         assertEquals(AssignmentStatus.ACTIVE, result.value.assignment.summary.status)
         assertEquals(AssignmentStatus.ACTIVE, store.queue.value.single().targetStatus)
         assertEquals(1, scheduler.calls)
+    }
+
+    @Test
+    fun `team member cannot complete assignment even with assignment permission`() = runBlocking {
+        val repository = DefaultAssignmentRepository(remote = FakeRemote())
+
+        val result = repository.changeStatus(
+            profile(role = "member"),
+            detail(AssignmentStatus.ACTIVE),
+            AssignmentStatus.COMPLETED,
+        )
+
+        assertTrue(result is AssignmentResult.Failure)
+        assertEquals(
+            AssignmentFailureKind.FORBIDDEN,
+            (result as AssignmentResult.Failure).failure.kind,
+        )
+    }
+
+    @Test
+    fun `uses persisted map data when server is unreachable`() = runBlocking {
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(buildingCount = 12), 1234L)
+        }
+        val repository = DefaultAssignmentRepository(
+            remote = FakeRemote(mapResult = networkFailure()),
+            offlineStore = store,
+        )
+
+        val result = repository.loadAssignmentMapData(detail(AssignmentStatus.READY))
+            as AssignmentResult.Success
+
+        assertEquals(AssignmentDataSource.LOCAL_CACHE, result.source)
+        assertEquals(12, result.value.buildingCount)
+        assertEquals(1234L, result.cachedAtEpochMillis)
+    }
+
+    @Test
+    fun `warming assignment also stores map data`() = runBlocking {
+        val store = FakeOfflineStore()
+        val repository = DefaultAssignmentRepository(
+            remote = FakeRemote(
+                mapResult = AssignmentResult.Success(AssignmentMapData(buildingCount = 3)),
+            ),
+            offlineStore = store,
+        )
+
+        repository.warmAssignments(listOf("assignment-1"))
+
+        assertEquals(3, store.mapData?.value?.buildingCount)
+    }
+
+    @Test
+    fun `shares concurrent paginated map data load`() = runBlocking {
+        val remote = FakeRemote(
+            mapResult = AssignmentResult.Success(AssignmentMapData(buildingCount = 713)),
+            mapDelayMillis = 50,
+        )
+        val repository = DefaultAssignmentRepository(remote = remote)
+        val assignment = detail(AssignmentStatus.READY)
+
+        awaitAll(
+            async { repository.loadAssignmentMapData(assignment) },
+            async { repository.loadAssignmentMapData(assignment) },
+            async { repository.loadAssignmentMapData(assignment) },
+        )
+
+        assertEquals(1, remote.mapLoadCalls)
     }
 
     @Test
@@ -134,10 +208,11 @@ class AssignmentOfflineRepositoryTest {
         assertEquals(SyncFailureKind.VALIDATION, store.queue.value.single().failureKind)
     }
 
-    private fun profile() = UserProfile(
+    private fun profile(role: String = "lead") = UserProfile(
         id = "user-1",
         name = "Field User",
         email = "field@example.test",
+        teams = listOf(TeamMembership("team-1", "Field Team", role)),
     )
 
     private fun summary(status: AssignmentStatus = AssignmentStatus.READY) = AssignmentSummary(
@@ -145,11 +220,12 @@ class AssignmentOfflineRepositoryTest {
         title = "Testauftrag",
         type = AssignmentType.STANDARD,
         status = status,
+        team = TeamSummary("team-1", "Field Team"),
     )
 
     private fun detail(status: AssignmentStatus) = AssignmentDetail(
         summary = summary(status),
-        permissions = AssignmentPermissions(start = true, pause = true),
+        permissions = AssignmentPermissions(start = true, pause = true, complete = true),
     )
 
     private fun <T> networkFailure(): AssignmentResult<T> = AssignmentResult.Failure(
@@ -181,7 +257,12 @@ class AssignmentOfflineRepositoryTest {
                 ),
             ),
         ),
+        private val mapResult: AssignmentResult<AssignmentMapData> = AssignmentResult.Success(
+            AssignmentMapData(),
+        ),
+        private val mapDelayMillis: Long = 0,
     ) : AssignmentRemoteDataSource {
+        var mapLoadCalls = 0
         override suspend fun loadAssignments(
             userId: String?,
             teamIds: List<String>,
@@ -189,6 +270,15 @@ class AssignmentOfflineRepositoryTest {
 
         override suspend fun loadAssignment(id: String): AssignmentResult<AssignmentDetail> =
             updateResult
+
+        override suspend fun loadAssignmentMapData(
+            id: String,
+            type: AssignmentType,
+        ): AssignmentResult<AssignmentMapData> {
+            mapLoadCalls++
+            if (mapDelayMillis > 0) delay(mapDelayMillis)
+            return mapResult
+        }
 
         override suspend fun updateAssignmentStatus(
             id: String,
@@ -199,22 +289,29 @@ class AssignmentOfflineRepositoryTest {
     private class FakeOfflineStore : OfflineStore {
         var assignments: CachedValue<AssignmentPage>? = null
         var assignment: CachedValue<AssignmentDetail>? = null
+        var mapData: CachedValue<AssignmentMapData>? = null
         val queue = MutableStateFlow<List<SyncQueueItem>>(emptyList())
         val operationLog = mutableListOf<String>()
 
         override fun observeAssignments(): Flow<CachedValue<AssignmentPage>?> = flowOf(assignments)
         override fun observeAssignment(id: String): Flow<CachedValue<AssignmentDetail>?> =
             flowOf(assignment)
+        override fun observeAssignmentMapData(id: String): Flow<CachedValue<AssignmentMapData>?> =
+            flowOf(mapData)
         override fun observeOfflineReadyAssignmentIds(): Flow<Set<String>> = flowOf(emptySet())
         override fun observeQueue(): Flow<List<SyncQueueItem>> = queue
         override suspend fun readAssignments(): CachedValue<AssignmentPage>? = assignments
         override suspend fun readAssignment(id: String): CachedValue<AssignmentDetail>? = assignment
+        override suspend fun readAssignmentMapData(id: String): CachedValue<AssignmentMapData>? = mapData
         override suspend fun storeAssignments(page: AssignmentPage) {
             assignments = CachedValue(page, 1L)
         }
         override suspend fun storeAssignment(detail: AssignmentDetail) {
             operationLog += "store"
             assignment = CachedValue(detail, 1L)
+        }
+        override suspend fun storeAssignmentMapData(id: String, mapData: AssignmentMapData) {
+            this.mapData = CachedValue(mapData, 1L)
         }
 
         override suspend fun enqueueAssignmentStatusUpdate(

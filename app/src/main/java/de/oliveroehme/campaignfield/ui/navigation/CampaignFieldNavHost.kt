@@ -85,7 +85,11 @@ fun CampaignFieldNavHost(
             val assignmentId = requireNotNull(backStackEntry.arguments?.getString("assignmentId"))
             val viewModel: AssignmentDetailViewModel = viewModel(
                 viewModelStoreOwner = backStackEntry,
-                factory = AssignmentDetailViewModel.factory(assignmentRepository, assignmentId),
+                factory = AssignmentDetailViewModel.factory(
+                    assignmentRepository,
+                    assignmentId,
+                    profile,
+                ),
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
             val syncViewModel: SyncViewModel = viewModel(
@@ -121,7 +125,11 @@ fun CampaignFieldNavHost(
             val assignmentId = requireNotNull(backStackEntry.arguments?.getString("assignmentId"))
             val viewModel: AssignmentDetailViewModel = viewModel(
                 viewModelStoreOwner = backStackEntry,
-                factory = AssignmentDetailViewModel.factory(assignmentRepository, assignmentId),
+                factory = AssignmentDetailViewModel.factory(
+                    assignmentRepository,
+                    assignmentId,
+                    profile,
+                ),
             )
             val state by viewModel.state.collectAsStateWithLifecycle()
             MapScreen(

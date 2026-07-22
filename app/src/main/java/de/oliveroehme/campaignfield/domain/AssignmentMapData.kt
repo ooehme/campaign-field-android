@@ -8,19 +8,23 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class AssignmentMapData(
     val buildingCount: Int = 0,
     val posterCount: Int = 0,
     val features: List<AssignmentMapFeature> = emptyList(),
 )
 
+@Serializable
 data class AssignmentMapFeature(
     val id: String,
     val kind: AssignmentMapFeatureKind,
     val geometryGeoJson: String,
 )
 
+@Serializable
 enum class AssignmentMapFeatureKind {
     BUILDING,
     POSTER,

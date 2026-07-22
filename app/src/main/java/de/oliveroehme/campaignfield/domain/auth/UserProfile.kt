@@ -1,5 +1,6 @@
 package de.oliveroehme.campaignfield.domain.auth
 
+import de.oliveroehme.campaignfield.domain.AssignmentDetail
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -25,3 +26,17 @@ data class TeamMembership(
 data class UserPermissions(
     val viewAssignments: Boolean = false,
 )
+
+fun UserProfile.leadsAssignmentTeam(assignment: AssignmentDetail): Boolean {
+    val teamId = assignment.summary.team?.id ?: return false
+    return teams.any { membership ->
+        membership.teamId == teamId && membership.role.isTeamLeadRole()
+    }
+}
+
+private fun String?.isTeamLeadRole(): Boolean = when (
+    this?.trim()?.lowercase()?.replace(Regex("[-\\s]+"), "_")
+) {
+    "lead", "leader", "teamlead", "team_lead", "team_leader" -> true
+    else -> false
+}
