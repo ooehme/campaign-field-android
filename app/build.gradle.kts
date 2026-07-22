@@ -1,17 +1,31 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
 
-val apiBaseUrl = providers.gradleProperty("CAMPAIGN_FIELD_API_BASE_URL")
-    .orElse("https://example.invalid/api")
+val localConfiguration = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.isFile) file.inputStream().use { load(it) }
+}
+
+fun configuredProperty(name: String, fallback: String) = providers.gradleProperty(name)
+    .orElse(providers.provider { localConfiguration.getProperty(name, fallback) })
+
+val apiBaseUrl = configuredProperty(
+    "CAMPAIGN_FIELD_API_BASE_URL",
+    "https://example.invalid/api",
+)
     .map { it.trim().trimEnd('/') }
 val escapedApiBaseUrl = apiBaseUrl.map {
     it.replace("\\", "\\\\").replace("\"", "\\\"")
 }
-val sanctumClientOrigin = providers.gradleProperty("CAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN")
-    .orElse("https://example.invalid")
+val sanctumClientOrigin = configuredProperty(
+    "CAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN",
+    "https://example.invalid",
+)
     .map { it.trim().trimEnd('/') }
 val escapedSanctumClientOrigin = sanctumClientOrigin.map {
     it.replace("\\", "\\\\").replace("\"", "\\\"")

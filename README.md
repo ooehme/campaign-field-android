@@ -52,6 +52,10 @@ als `BuildConfig`-Werte kompiliert und enthalten ausdrücklich kein Auth-Materia
 Sanctum-Client-Origin ist die serverseitig freigegebene Stateful-Origin; Requests selbst
 bleiben strikt auf die Origin der API-Basis-URL begrenzt.
 
+Für „Run“ aus Android Studio können beide Properties auch in der ignorierten
+`local.properties` stehen. Explizite Gradle-Properties (`-P…` oder `~/.gradle`) haben
+weiterhin Vorrang.
+
 ## Struktur
 
 ```text

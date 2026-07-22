@@ -11,6 +11,7 @@ sealed class AppDestination(
     data object Profile : AppDestination("profile", "Profil", "P")
 
     companion object {
-        val shellItems = listOf(Assignments, Map, Sync, Profile)
+        val shellItems: List<AppDestination>
+            get() = listOf(Assignments, Map, Sync, Profile)
     }
 }
