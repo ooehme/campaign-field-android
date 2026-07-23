@@ -83,6 +83,25 @@ docs/         Analyse, Roadmap, Security und ADRs
 
 ## Distribution
 
-Das Ziel ist eine reproduzierbare, F-Droid-taugliche Release-Pipeline ohne proprietäre
-Laufzeitdienste. Signing-Material wird nie eingecheckt. Reproducible-Build- und
-Dependency-Audit-Anforderungen werden in Roadmap-Phase 10 umgesetzt.
+GitHub Actions baut und veröffentlicht signierte Beta-APKs für Tags wie
+`v0.1.0-beta.1`. Der Beta-Build nutzt `https://core.oliveroehme.de/api` und wird als
+GitHub-Prerelease mit SHA-256-Prüfsumme bereitgestellt.
+
+Einmalig müssen unter **Settings → Secrets and variables → Actions** diese
+Repository-Secrets angelegt werden:
+
+- `ANDROID_RELEASE_KEYSTORE_BASE64`: Base64-kodierter Release-Keystore
+- `ANDROID_RELEASE_STORE_PASSWORD`
+- `ANDROID_RELEASE_KEY_ALIAS`
+- `ANDROID_RELEASE_KEY_PASSWORD`
+
+Der Workflow kann anschließend über **Actions → Android Beta Release** mit einem neuen
+Beta-Tag gestartet werden. Alternativ löst das Pushen eines passenden Tags den Build aus:
+
+```bash
+git tag v0.1.0-beta.1
+git push origin v0.1.0-beta.1
+```
+
+Keystore und Passwörter werden nie eingecheckt. Der Keystore muss sicher gesichert werden,
+da spätere APK-Updates mit demselben Schlüssel signiert sein müssen.

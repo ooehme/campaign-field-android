@@ -20,6 +20,18 @@ val localConfiguration = Properties().apply {
 fun configuredProperty(name: String, fallback: String) = providers.gradleProperty(name)
     .orElse(providers.provider { localConfiguration.getProperty(name, fallback) })
 
+fun signingProperty(name: String) = providers.gradleProperty(name)
+    .orElse(providers.environmentVariable(name))
+
+val appVersionCode = providers.gradleProperty("CAMPAIGN_FIELD_VERSION_CODE")
+    .map { value ->
+        value.toInt().also { require(it > 0) { "CAMPAIGN_FIELD_VERSION_CODE muss positiv sein." } }
+    }
+    .orElse(1)
+val appVersionName = providers.gradleProperty("CAMPAIGN_FIELD_VERSION_NAME")
+    .map { value -> value.trim().also { require(it.isNotEmpty()) { "CAMPAIGN_FIELD_VERSION_NAME fehlt." } } }
+    .orElse("0.1.0")
+
 val apiBaseUrl = configuredProperty(
     "CAMPAIGN_FIELD_API_BASE_URL",
     "https://example.invalid/api",
@@ -44,6 +56,17 @@ val escapedMapStyleUrl = mapStyleUrl.map {
     it.replace("\\", "\\\\").replace("\"", "\\\"")
 }
 
+val releaseSigningStoreFile = signingProperty("CAMPAIGN_FIELD_SIGNING_STORE_FILE")
+val releaseSigningStorePassword = signingProperty("CAMPAIGN_FIELD_SIGNING_STORE_PASSWORD")
+val releaseSigningKeyAlias = signingProperty("CAMPAIGN_FIELD_SIGNING_KEY_ALIAS")
+val releaseSigningKeyPassword = signingProperty("CAMPAIGN_FIELD_SIGNING_KEY_PASSWORD")
+val releaseSigningConfigured = listOf(
+    releaseSigningStoreFile,
+    releaseSigningStorePassword,
+    releaseSigningKeyAlias,
+    releaseSigningKeyPassword,
+).all { !it.orNull.isNullOrBlank() }
+
 android {
     namespace = "de.oliveroehme.campaignfield"
     compileSdk = 36
@@ -52,8 +75,8 @@ android {
         applicationId = "de.oliveroehme.campaignfield"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode.get()
+        versionName = appVersionName.get()
 
         buildConfigField("String", "API_BASE_URL", "\"${escapedApiBaseUrl.get()}\"")
         buildConfigField(
@@ -65,12 +88,26 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = rootProject.file(releaseSigningStoreFile.get())
+                storePassword = releaseSigningStorePassword.get()
+                keyAlias = releaseSigningKeyAlias.get()
+                keyPassword = releaseSigningKeyPassword.get()
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
         release {
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -97,6 +134,29 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    group = "verification"
+    description = "Prüft die für ein Release erforderliche Android-Signatur."
+    doLast {
+        check(releaseSigningConfigured) {
+            "Release-Signierung fehlt. Setze CAMPAIGN_FIELD_SIGNING_STORE_FILE, " +
+                "CAMPAIGN_FIELD_SIGNING_STORE_PASSWORD, CAMPAIGN_FIELD_SIGNING_KEY_ALIAS und " +
+                "CAMPAIGN_FIELD_SIGNING_KEY_PASSWORD."
+        }
+        check(rootProject.file(releaseSigningStoreFile.get()).isFile) {
+            "Der konfigurierte Release-Keystore existiert nicht."
+        }
+    }
+}
+
+tasks.matching {
+    it.name == "packageRelease" ||
+        it.name == "bundleRelease" ||
+        it.name == "signReleaseBundle"
+}.configureEach {
+    dependsOn(validateReleaseSigning)
 }
 
 dependencies {

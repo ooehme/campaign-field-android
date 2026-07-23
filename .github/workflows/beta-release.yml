@@ -1,0 +1,167 @@
+name: Android Beta Release
+
+on:
+  push:
+    tags:
+      - "v*-beta.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Beta-Tag, z. B. v0.1.0-beta.1"
+        required: true
+        type: string
+
+concurrency:
+  group: beta-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish signed APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine release metadata
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$REQUESTED_TAG"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+            echo "::error::Der Tag muss dem Muster v0.1.0-beta.1 entsprechen."
+            exit 1
+          fi
+          version_name="${tag#v}"
+          version_code=$((100000 + GITHUB_RUN_NUMBER))
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate manual tag target
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            tag_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::Der vorhandene Tag zeigt nicht auf den ausgewählten Commit."
+              exit 1
+            fi
+          fi
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/wrapper-validation@v6
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Validate signing secrets
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Signing-Secret $name fehlt."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Restore release keystore
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/campaign-field-release.jks"
+          chmod 600 "$RUNNER_TEMP/campaign-field-release.jks"
+
+      - name: Test, lint and build signed APK
+        shell: bash
+        env:
+          CAMPAIGN_FIELD_SIGNING_STORE_FILE: ${{ runner.temp }}/campaign-field-release.jks
+          CAMPAIGN_FIELD_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          CAMPAIGN_FIELD_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          CAMPAIGN_FIELD_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon test lint assembleRelease \
+            -PCAMPAIGN_FIELD_VERSION_NAME="${{ steps.release.outputs.version_name }}" \
+            -PCAMPAIGN_FIELD_VERSION_CODE="${{ steps.release.outputs.version_code }}" \
+            -PCAMPAIGN_FIELD_API_BASE_URL="https://core.oliveroehme.de/api" \
+            -PCAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN="https://core.oliveroehme.de"
+
+      - name: Verify and prepare release assets
+        id: assets
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.release.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          source_apk="app/build/outputs/apk/release/app-release.apk"
+          release_dir="$RUNNER_TEMP/release"
+          release_apk="$release_dir/campaign-field-$VERSION_NAME.apk"
+          mkdir -p "$release_dir"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          if [[ -z "$apksigner" ]]; then
+            echo "::error::apksigner wurde nicht gefunden."
+            exit 1
+          fi
+          "$apksigner" verify --verbose --print-certs "$source_apk"
+          cp "$source_apk" "$release_apk"
+          (
+            cd "$release_dir"
+            sha256sum "$(basename "$release_apk")" > "$(basename "$release_apk").sha256"
+          )
+          echo "apk=$release_apk" >> "$GITHUB_OUTPUT"
+          echo "checksum=$release_apk.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: campaign-field-${{ steps.release.outputs.version_name }}
+          path: |
+            ${{ steps.assets.outputs.apk }}
+            ${{ steps.assets.outputs.checksum }}
+          if-no-files-found: error
+
+      - name: Publish GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERSION_NAME: ${{ steps.release.outputs.version_name }}
+          RELEASE_APK: ${{ steps.assets.outputs.apk }}
+          RELEASE_CHECKSUM: ${{ steps.assets.outputs.checksum }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "$RELEASE_APK" \
+            "$RELEASE_CHECKSUM" \
+            --target "$GITHUB_SHA" \
+            --title "Campaign Field $VERSION_NAME (Beta)" \
+            --notes "Signierte Beta-APK für https://core.oliveroehme.de/api." \
+            --generate-notes \
+            --prerelease \
+            --latest=false
