@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -119,8 +120,9 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 32.dp),
-        contentAlignment = Alignment.Center,
+            .statusBarsPadding()
+            .padding(start = 20.dp, top = 24.dp, end = 20.dp, bottom = 32.dp),
+        contentAlignment = Alignment.TopCenter,
     ) {
         FieldPanel(
             modifier = Modifier.fillMaxWidth().widthIn(max = 384.dp),

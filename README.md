@@ -85,7 +85,8 @@ docs/         Analyse, Roadmap, Security und ADRs
 
 GitHub Actions baut und veröffentlicht signierte Beta-APKs für Tags wie
 `v0.1.0-beta.1`. Der Beta-Build nutzt `https://core.oliveroehme.de/api` und wird als
-GitHub-Prerelease mit SHA-256-Prüfsumme bereitgestellt.
+GitHub-Prerelease mit SHA-256-Prüfsumme bereitgestellt. Als Sanctum-Client-Origin wird
+`https://web.oliveroehme.de` gesendet.
 
 Einmalig müssen unter **Settings → Secrets and variables → Actions** diese
 Repository-Secrets angelegt werden:

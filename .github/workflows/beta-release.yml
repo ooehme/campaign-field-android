@@ -111,7 +111,7 @@ jobs:
             -PCAMPAIGN_FIELD_VERSION_NAME="${{ steps.release.outputs.version_name }}" \
             -PCAMPAIGN_FIELD_VERSION_CODE="${{ steps.release.outputs.version_code }}" \
             -PCAMPAIGN_FIELD_API_BASE_URL="https://core.oliveroehme.de/api" \
-            -PCAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN="https://core.oliveroehme.de"
+            -PCAMPAIGN_FIELD_SANCTUM_CLIENT_ORIGIN="https://web.oliveroehme.de"
 
       - name: Verify and prepare release assets
         id: assets
