@@ -29,12 +29,13 @@ import de.oliveroehme.campaignfield.network.assignment.AssignmentResult
 import de.oliveroehme.campaignfield.sync.AssignmentSyncEngine
 import de.oliveroehme.campaignfield.sync.SyncProcessOutcome
 import de.oliveroehme.campaignfield.sync.SyncScheduler
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -314,6 +315,42 @@ class AssignmentOfflineRepositoryTest {
     }
 
     @Test
+    fun `concurrent map load does not overwrite newer building status`() = runBlocking {
+        val building = AssignmentMapFeature(
+            id = "building-1",
+            kind = AssignmentMapFeatureKind.BUILDING,
+            geometryGeoJson = "{}",
+            status = BuildingStatus.OPEN,
+            canUpdate = true,
+        )
+        val store = FakeOfflineStore().apply {
+            mapData = CachedValue(AssignmentMapData(1, features = listOf(building)), 1L)
+        }
+        val mapLoadStarted = CompletableDeferred<Unit>()
+        val releaseMapLoad = CompletableDeferred<Unit>()
+        val repository = DefaultAssignmentRepository(
+            remote = FakeRemote(
+                mapResult = AssignmentResult.Success(
+                    AssignmentMapData(1, features = listOf(building)),
+                ),
+                mapLoadStarted = mapLoadStarted,
+                releaseMapLoad = releaseMapLoad,
+            ),
+            offlineStore = store,
+        )
+        val assignment = detail(AssignmentStatus.ACTIVE)
+
+        val loading = async { repository.loadAssignmentMapData(assignment) }
+        mapLoadStarted.await()
+        repository.changeBuildingStatus(assignment, building, BuildingStatus.DONE)
+        releaseMapLoad.complete(Unit)
+        val loaded = loading.await() as AssignmentResult.Success
+
+        assertEquals(BuildingStatus.DONE, loaded.value.features.single().status)
+        assertEquals(BuildingStatus.DONE, store.mapData?.value?.features?.single()?.status)
+    }
+
+    @Test
     fun `sync stores server snapshot before event is marked synced`() = runBlocking {
         val store = FakeOfflineStore().apply {
             enqueueAssignmentStatusUpdate(
@@ -521,6 +558,8 @@ class AssignmentOfflineRepositoryTest {
             AssignmentMapData(),
         ),
         private val mapDelayMillis: Long = 0,
+        private val mapLoadStarted: CompletableDeferred<Unit>? = null,
+        private val releaseMapLoad: CompletableDeferred<Unit>? = null,
         private val posterCreateResult: AssignmentResult<AssignmentMapFeature>? = null,
         private val boothSaveResult: AssignmentResult<AssignmentMapFeature>? = null,
     ) : AssignmentRemoteDataSource {
@@ -545,6 +584,8 @@ class AssignmentOfflineRepositoryTest {
             type: AssignmentType,
         ): AssignmentResult<AssignmentMapData> {
             mapLoadCalls++
+            mapLoadStarted?.complete(Unit)
+            releaseMapLoad?.await()
             if (mapDelayMillis > 0) delay(mapDelayMillis)
             return mapResult
         }

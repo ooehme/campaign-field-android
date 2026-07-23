@@ -116,6 +116,8 @@ class DefaultAssignmentRepository(
     private val mapDataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mapDataRequestsMutex = Mutex()
     private val mapDataRequests = mutableMapOf<String, Deferred<AssignmentResult<AssignmentMapData>>>()
+    private val mapDataCacheMutex = Mutex()
+    private val mapDataCacheRevisions = mutableMapOf<String, Long>()
 
     override suspend fun loadAssignments(profile: UserProfile): AssignmentResult<AssignmentPage> {
         val remoteResult = remote.loadAssignments(
@@ -195,20 +197,29 @@ class DefaultAssignmentRepository(
     private suspend fun loadAndCacheAssignmentMapData(
         assignment: AssignmentDetail,
     ): AssignmentResult<AssignmentMapData> {
+        val assignmentId = assignment.summary.id
+        val cacheRevision = mapDataCacheMutex.withLock {
+            mapDataCacheRevisions[assignmentId] ?: 0L
+        }
         return when (
             val result = remote.loadAssignmentMapData(
-                id = assignment.summary.id,
+                id = assignmentId,
                 type = assignment.summary.type,
             )
         ) {
             is AssignmentResult.Success -> {
-                offlineStore?.storeAssignmentMapData(assignment.summary.id, result.value)
-                AssignmentResult.Success(
-                    offlineStore?.readAssignmentMapData(assignment.summary.id)?.value ?: result.value,
-                )
+                val effective = offlineStore?.let { store ->
+                    mapDataCacheMutex.withLock {
+                        if ((mapDataCacheRevisions[assignmentId] ?: 0L) == cacheRevision) {
+                            store.storeAssignmentMapData(assignmentId, result.value)
+                        }
+                        store.readAssignmentMapData(assignmentId)?.value
+                    }
+                } ?: result.value
+                AssignmentResult.Success(effective)
             }
             is AssignmentResult.Failure -> {
-                val cached = offlineStore?.readAssignmentMapData(assignment.summary.id)
+                val cached = offlineStore?.readAssignmentMapData(assignmentId)
                 if (cached != null && result.failure.kind.isCacheFallbackAllowed()) {
                     AssignmentResult.Success(
                         value = cached.value,
@@ -339,11 +350,16 @@ class DefaultAssignmentRepository(
         ) {
             is AssignmentResult.Success -> {
                 val updated = result.value ?: building.copy(status = targetStatus)
-                offlineStore?.mergeAssignmentMapFeature(
-                    assignment.summary.id,
-                    building.id,
-                    updated,
-                )
+                val assignmentId = assignment.summary.id
+                mapDataCacheMutex.withLock {
+                    offlineStore?.mergeAssignmentMapFeature(
+                        assignmentId,
+                        building.id,
+                        updated,
+                    )
+                    mapDataCacheRevisions[assignmentId] =
+                        (mapDataCacheRevisions[assignmentId] ?: 0L) + 1L
+                }
                 AssignmentResult.Success(
                     AssignmentBuildingStatusChange(
                         updated,
